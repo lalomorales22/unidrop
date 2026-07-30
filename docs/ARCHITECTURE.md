@@ -140,8 +140,9 @@ desktop entry, scalable icon, AppStream metadata, and runtime license notice.
 AMD64 and ARM64 packages build and execute on matching clean GitHub runners. The
 AppRun entry point starts the core for that AppImage instance and keeps the tray
 in the foreground; `--cli` dispatches an explicit command to the bundled core.
-The AppStream project license remains `Proprietary` while the repository has no
-owner-approved client license and must change with the future `LICENSE` file.
+The AppStream project license remains `LicenseRef-proprietary` while the
+repository has no owner-approved client license and must change with the future
+`LICENSE` file.
 
 The trusted tag workflow is isolated from pull requests. It requires an annotated
 immutable version tag and protected Ed25519 signing key, signs the exact manifest
