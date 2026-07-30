@@ -61,7 +61,8 @@ Every completed engineering task must satisfy the applicable items below:
 
 - [x] Code is formatted and passes `git diff --check`.
 - [x] Unit, integration, race, and platform-specific tests pass where applicable.
-- [ ] Security-sensitive behavior has negative and abuse-case tests.
+- [x] Security-sensitive behavior has negative and abuse-case tests, mapped in
+  `docs/SECURITY_TEST_MATRIX.md`.
 - [x] Dependencies and downloaded tools have pinned versions, integrity checks,
   license review, and CVE/advisory review recorded in the repository.
 - [x] User-facing behavior and troubleshooting steps are documented.
