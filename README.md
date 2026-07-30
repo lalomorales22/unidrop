@@ -2,12 +2,17 @@
 
 UniDrop is a working cross-platform local file sender for macOS, Linux, and Windows. It discovers nearby computers, pairs them with a one-time key, and streams files directly over a TLS 1.3 connection. There is no cloud upload and no account.
 
-The application core and responsive control panel are intentionally contained in [`main.go`](main.go). It uses only the Go standard library: no npm tree, Electron runtime, PHP server, database, or third-party Go module is installed.
+The secure engine and responsive interface are intentionally contained in [`main.go`](main.go). macOS adds a tiny native AppKit/WebKit menu-bar shell from [`macos/UniDropMenu.swift`](macos/UniDropMenu.swift). UniDrop uses no third-party runtime, npm tree, Electron bundle, database, or third-party Go module.
 
-## What works in v0.2
+## What works in v0.3
 
 - macOS, Linux, and Windows binaries from one source file
 - automatic peer discovery on the same LAN using local multicast
+- native macOS menu-bar icon that stays running and opens a compact popover
+- Bonjour-assisted Mac-to-Mac discovery plus resilient multicast retry
+- nearby-device and pending-approval count in the menu bar
+- compact nearly-black UI designed for the menu-bar popover
+- explicit **Pair** action; IP entry is now an expandable fallback
 - manual IP address fallback when a network blocks multicast
 - mutual pairing with a 64-bit one-time key
 - TLS 1.3, certificate pinning, 256-bit bearer tokens, and pairing rate limits
@@ -49,16 +54,18 @@ If Go is already installed, the installer uses it. Otherwise it downloads the of
 
 Go 1.26.5 is intentionally pinned because it is the current July 2026 security release and includes the latest fixes in `crypto/tls` and `os`. See the [Go release history](https://go.dev/doc/devel/release) and [Go vulnerability database](https://pkg.go.dev/vuln/).
 
+The macOS installer includes a SHA-256-pinned universal menu-bar binary built from the checked-in Swift source, so Xcode is not required. If that binary is intentionally omitted, the installer can rebuild it with Apple’s Swift compiler. No third-party package is downloaded.
+
 ## Use
 
-1. Open UniDrop on both computers. The control panel is always available at [http://127.0.0.1:43337](http://127.0.0.1:43337).
-2. Choose the nearby device on the sender.
-3. Copy the one-time pairing key shown by the receiver into the sender.
+1. Open UniDrop on both computers. On macOS, click the ⇅ icon in the menu bar; the full panel remains available at [http://127.0.0.1:43337](http://127.0.0.1:43337).
+2. UniDrop searches automatically. Choose the nearby device that appears.
+3. Copy the one-time pairing key shown by the receiver, paste it on the sender, and press **Pair**.
 4. Drop one or more files and press **Send**.
 5. The receiver reviews the filename, size, and paired sender, then presses **Accept** or **Decline**.
 6. Accepted files appear in `Downloads/UniDrop`.
 
-The first launch may trigger an operating-system firewall prompt. Allow private/local network access. If the other computer does not appear, enter its LAN address in the manual field, for example `192.168.1.20:43338`.
+The first macOS launch asks for Local Network access. Choose **Allow** so automatic discovery can see nearby Macs. UniDrop now retries discovery after the decision instead of silently giving up. If a managed, guest, or multicast-blocked network still hides peers, expand **Connect by address instead** and enter the address displayed by the other computer.
 
 ### Send from the command line
 
@@ -94,11 +101,11 @@ Incoming behavior is controlled from the receiver panel:
 
 | Platform | Startup and app access | Received files | Current native shell integration |
 |---|---|---|---|
-| macOS | `~/Applications/UniDrop.app` plus a LaunchAgent | `~/Downloads/UniDrop` | Background app with no Dock icon; browser control panel; native notification |
+| macOS | `~/Applications/UniDrop.app` plus a LaunchAgent | `~/Downloads/UniDrop` | Native menu-bar popover, Bonjour discovery, count badge, compact UI, notifications |
 | Linux | application-menu entry plus systemd user service or XDG autostart | `~/Downloads/UniDrop` | Browser control panel; `notify-send` when available |
 | Windows | Start-menu and Startup shortcuts; command added to user PATH | `%USERPROFILE%\Downloads\UniDrop` | Browser control panel; private-network firewall prompt may appear |
 
-A true native menu-bar/system-tray adapter is the next shell layer. It will expose nearby-device count, pending approvals, receive mode, recent transfers, **Open UniDrop**, and **Quit**. The network and security core is already independent of it. Native tray APIs are different on every target—AppKit on macOS, AppIndicator/StatusNotifier on Linux, and Shell_NotifyIcon on Windows—and Linux has no single universal tray API. Keeping that adapter separate preserves the dependency-free, easily cross-compiled core.
+macOS now has the first native shell layer. Windows and Linux tray shells are next. They will reuse the same loopback summary, discovery, approval, and command APIs while adapting to Shell_NotifyIcon on Windows and StatusNotifier/AppIndicator where the Linux desktop supports it.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the OS breakdown and [SECURITY.md](SECURITY.md) for the threat model and remaining hardening work.
 
@@ -129,4 +136,4 @@ The release builder also writes `dist/SHA256SUMS`, which both installers verify 
 
 UniDrop is currently for devices on the same local IP network. It does not open router ports, use UPnP, or provide an internet relay.
 
-Protocol v2 is used by UniDrop v0.2. Upgrade both computers together; v0.1 peers are intentionally ignored because v0.1 did not negotiate receiver approval before sending bytes.
+Protocol v2 is used by UniDrop v0.2 and v0.3. Upgrade both computers together; v0.1 peers are intentionally ignored because v0.1 did not negotiate receiver approval before sending bytes.

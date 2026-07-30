@@ -1,6 +1,6 @@
 # UniDrop security model
 
-UniDrop v0.2 is designed for direct file sharing between computers on the same trusted or semi-trusted local network. It encrypts transfers, requires an explicit first pairing, and asks the receiver before accepting file bytes by default. It is not yet an audited replacement for AirDrop in a hostile enterprise network.
+UniDrop v0.3 is designed for direct file sharing between computers on the same trusted or semi-trusted local network. It encrypts transfers, requires an explicit first pairing, and asks the receiver before accepting file bytes by default. It is not yet an audited replacement for AirDrop in a hostile enterprise network.
 
 ## Protections implemented
 
@@ -18,6 +18,8 @@ UniDrop v0.2 is designed for direct file sharing between computers on the same t
 - command bridge bound to loopback and authenticated with a random 256-bit user-only token
 - short-lived transfer offers bound to sender identity, safe filename, and exact content length
 - explicit **Accept/Decline** receiver approval by default, with receiving-off and trusted-device modes
+- macOS local-network purpose string and LaunchAgent-to-bundle association
+- native WebKit shell loads only the loopback UI; privileged shell messages require the exact loopback host and port
 - no LAN traffic sent through environment-configured HTTP proxies
 - filename path components, control characters, and Windows-reserved separators removed
 - incomplete receive files removed; existing files get a unique name
@@ -38,11 +40,11 @@ Discovery announcements contain the device ID, display name, operating system fa
 - Availability is not guaranteed against a hostile LAN peer that floods the HTTPS port or discovery group.
 - Tokens are protected by OS user permissions, not a hardware keystore/keychain yet.
 - Transfer completion currently relies on TLS/TCP integrity and byte count; an explicit final content digest is planned.
-- Receiver approvals currently appear in the local control panel and an OS notification; the native tray/menu-bar approval surface is not implemented yet.
+- macOS receiver approvals appear directly in the native menu-bar popover. Windows and Linux still use the local control panel and OS notifications until their tray shells are implemented.
 
 ## Dependency and CVE policy
 
-The application imports only Go standard-library packages. No package manager runs at application startup.
+The application imports only Go standard-library packages. The macOS shell links only Apple’s system AppKit, Foundation, and WebKit frameworks. No package manager runs at installation or application startup.
 
 Installers pin the official Go 1.26.5 toolchain and the SHA-256 values published by `go.dev` for macOS, Linux, and Windows on AMD64 and ARM64. That release includes July 2026 security fixes in `crypto/tls` and `os`; older 1.26 releases fixed additional issues in `crypto/x509`, `net/http`, and related packages. Before updating the pinned compiler, review the [official release history](https://go.dev/doc/devel/release) and run Go's vulnerability tooling against the final module.
 

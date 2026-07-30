@@ -17,9 +17,10 @@ Bluetooth can later serve as a discovery or IP-bootstrap channel, but it should 
 
 ```mermaid
 flowchart LR
-    UIA["Sender browser UI\n127.0.0.1:43337"] --> DA["Sender UniDrop daemon"]
+    UIA["Compact native menu popover\nor browser UI"] --> DA["Sender UniDrop daemon"]
     CLIA["unidrop send file\nminibrain.local"] -->|"loopback + private token"| DA
     DA -. "UDP multicast discovery" .-> DB["Receiver UniDrop daemon"]
+    UIA -. "macOS Bonjour assist" .-> DB
     DA == "TLS 1.3 pinned HTTPS\noffer, approval, streamed file" ==> DB
     DB --> DL["Downloads/UniDrop"]
     UIB["Receiver approval UI\nAccept or Decline"] --> DB
@@ -64,10 +65,12 @@ The token in `control-token` prevents an unrelated web page from invoking filesy
 - Install target: `~/Applications/UniDrop.app`
 - Startup: `~/Library/LaunchAgents/com.unidrop.app.plist`
 - Configuration: `~/Library/Application Support/UniDrop`
-- Background behavior: `LSUIElement` hides the Dock icon
-- User actions: the app or CLI opens the loopback control panel with `open`
+- Background behavior: `LSUIElement` hides the Dock icon while `NSStatusItem` stays visible
+- Native shell: universal Swift/AppKit executable with a transient WebKit popover
+- Discovery: cross-platform UDP multicast plus native `_unidrop._tcp` Bonjour publish/browse
+- Local-network privacy: purpose string in the app and `AssociatedBundleIdentifiers` in the LaunchAgent
+- User actions: compact popover, full panel, CLI, pause receiving, and Quit
 - Receive notification: AppleScript notification
-- Future menu bar: a small Swift/AppKit adapter using `NSStatusItem`
 
 ### Linux
 
@@ -102,7 +105,7 @@ Files are deliberately sent as raw request bodies rather than multipart forms. T
 
 ## Roadmap
 
-1. Native tray/menu-bar adapters with **Open**, **Receive mode**, and **Quit**.
+1. Native Windows and Linux tray adapters with **Open**, **Receive mode**, and **Quit**.
 2. Finder, Explorer, Dolphin, Nautilus, and Thunar **Send with UniDrop** entry points backed by the command bridge.
 3. Signed/notarized installers and an update manifest with binary checksums.
 4. Optional QR pairing and a stronger PAKE-based short-code mode.

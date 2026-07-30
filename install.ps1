@@ -3,7 +3,7 @@
 param([switch]$NoStart)
 $ErrorActionPreference = 'Stop'
 
-$AppVersion = '0.2.0'
+$AppVersion = '0.3.0'
 $GoVersion = '1.26.5'
 $ScriptDirectory = $PSScriptRoot
 $TempDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("unidrop-install-" + [guid]::NewGuid().ToString('N'))

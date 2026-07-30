@@ -3,7 +3,7 @@
 # It installs per-user, needs no sudo, and never downloads third-party modules.
 set -eu
 
-APP_VERSION="0.2.0"
+APP_VERSION="0.3.0"
 GO_VERSION="1.26.5"
 SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
 TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/unidrop-install.XXXXXX")
@@ -122,27 +122,71 @@ build_binary() {
   chmod 755 "$output"
 }
 
+build_macos_menu() {
+  output=$1
+  portable="$SCRIPT_DIR/macos/UniDropMenu.universal"
+  if [ -f "$portable" ]; then
+    say "using the verified universal macOS menu-bar shell"
+    verify_sha256 'd403bd6a4d8bd0dc91619223cae7dac4902e5bbea3f4449db7c0541ea966bede' "$portable"
+    cp "$portable" "$output"
+    chmod 755 "$output"
+    return
+  fi
+  bundled="$SCRIPT_DIR/dist/unidrop-menu-darwin-$TARGET_ARCH"
+  if [ -f "$bundled" ]; then
+    say "using bundled macOS menu-bar shell"
+    manifest="$SCRIPT_DIR/dist/SHA256SUMS"
+    if [ -f "$manifest" ]; then
+      expected=$(awk -v name="$(basename "$bundled")" '$2 == name || $2 == "*" name {print $1; exit}' "$manifest")
+      [ -n "$expected" ] || fail "bundled menu-bar shell is missing from SHA256SUMS"
+      verify_sha256 "$expected" "$bundled"
+    fi
+    cp "$bundled" "$output"
+  else
+    [ -f "$SCRIPT_DIR/macos/UniDropMenu.swift" ] || fail "macOS menu-bar source is missing"
+    command -v xcrun >/dev/null 2>&1 && xcrun --find swiftc >/dev/null 2>&1 || \
+      fail "the source installer needs Apple's Swift compiler; run xcode-select --install or use a bundled UniDrop release"
+    say "building the native macOS menu-bar shell"
+    case "$TARGET_ARCH" in
+      amd64) swift_arch="x86_64" ;;
+      arm64) swift_arch="arm64" ;;
+    esac
+    target="$swift_arch-apple-macosx13.0"
+    xcrun swiftc -swift-version 5 -O -whole-module-optimization -target "$target" \
+      -framework AppKit -framework WebKit "$SCRIPT_DIR/macos/UniDropMenu.swift" -o "$output"
+  fi
+  chmod 755 "$output"
+}
+
 install_macos() {
   app_dir="$INSTALL_HOME/Applications/UniDrop.app"
   contents="$app_dir/Contents"
-  binary="$contents/MacOS/unidrop"
+  binary="$contents/Resources/unidrop-core"
+  menu_binary="$contents/MacOS/UniDrop"
   launch_agents="$INSTALL_HOME/Library/LaunchAgents"
   plist="$launch_agents/com.unidrop.app.plist"
   cli_dir="$INSTALL_HOME/.local/bin"
 
-  mkdir -p "$contents/MacOS" "$launch_agents" "$cli_dir"
+  mkdir -p "$contents/MacOS" "$contents/Resources" "$launch_agents" "$cli_dir"
+  rm -f "$contents/MacOS/unidrop"
   build_binary "$binary"
+  build_macos_menu "$menu_binary"
   cat > "$contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>CFBundleDisplayName</key><string>UniDrop</string>
-  <key>CFBundleExecutable</key><string>unidrop</string>
+  <key>CFBundleExecutable</key><string>UniDrop</string>
   <key>CFBundleIdentifier</key><string>com.unidrop.app</string>
   <key>CFBundleName</key><string>UniDrop</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$APP_VERSION</string>
+  <key>CFBundleVersion</key><string>$APP_VERSION</string>
+  <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
+  <key>NSLocalNetworkUsageDescription</key><string>UniDrop searches for your nearby computers and sends files directly over your local network.</string>
+  <key>NSBonjourServices</key><array><string>_unidrop._tcp</string></array>
+  <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict></plist>
 PLIST
   cat > "$plist" <<PLIST
@@ -150,7 +194,8 @@ PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>com.unidrop.app</string>
-  <key>ProgramArguments</key><array><string>$binary</string><string>--no-open</string></array>
+  <key>ProgramArguments</key><array><string>$menu_binary</string></array>
+  <key>AssociatedBundleIdentifiers</key><array><string>com.unidrop.app</string></array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ProcessType</key><string>Interactive</string>
@@ -160,15 +205,19 @@ PLIST
 PLIST
   ln -sf "$binary" "$cli_dir/unidrop"
   ensure_cli_path "$cli_dir"
+  if command -v codesign >/dev/null 2>&1; then
+    codesign --force --deep --sign - "$app_dir" >/dev/null
+  fi
   if [ "$NO_START" != "1" ]; then
     launchctl bootout "gui/$(id -u)/com.unidrop.app" >/dev/null 2>&1 || :
+    launchctl enable "gui/$(id -u)/com.unidrop.app" >/dev/null 2>&1 || :
     launchctl bootstrap "gui/$(id -u)" "$plist"
   fi
   say "installed $app_dir"
   if [ "$NO_START" = "1" ]; then
     say "startup files installed; automatic start was skipped"
   else
-    say "UniDrop is running. Open the app from ~/Applications or visit http://127.0.0.1:43337"
+    say "UniDrop is running in your menu bar. Click the ⇅ icon to open it."
   fi
 }
 

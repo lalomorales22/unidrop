@@ -3,7 +3,7 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
 DIST_DIR="$SCRIPT_DIR/dist"
-VERSION=${UNIDROP_VERSION:-0.2.0}
+VERSION=${UNIDROP_VERSION:-0.3.0}
 
 command -v go >/dev/null 2>&1 || { printf '%s\n' 'Go is required to build release binaries.' >&2; exit 1; }
 mkdir -p "$DIST_DIR"
@@ -24,6 +24,10 @@ build linux amd64 ''
 build linux arm64 ''
 build windows amd64 '.exe'
 build windows arm64 '.exe'
+
+if [ "$(uname -s)" = "Darwin" ] && command -v xcrun >/dev/null 2>&1 && xcrun --find swiftc >/dev/null 2>&1; then
+  "$SCRIPT_DIR/scripts/build-macos-menu.sh"
+fi
 
 if command -v sha256sum >/dev/null 2>&1; then
   (cd "$DIST_DIR" && sha256sum unidrop-* > SHA256SUMS)

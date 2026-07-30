@@ -38,7 +38,7 @@ import (
 	"time"
 )
 
-var appVersion = "0.2.0"
+var appVersion = "0.3.0"
 
 const (
 	protocolVersion  = 2
@@ -172,6 +172,8 @@ type App struct {
 	pairingCode  string
 	controlToken string
 	receiveMode  string
+	discovery    string
+	discoveryErr string
 	peerPort     int
 	uiAddress    string
 	maxBytes     int64
@@ -211,6 +213,7 @@ func main() {
 	noOpen := flag.Bool("no-open", false, "do not open the control panel at startup")
 	openOnly := flag.Bool("open", false, "open the running control panel and exit")
 	showVersion := flag.Bool("version", false, "show version and exit")
+	exitOnStdinClose := flag.Bool("exit-on-stdin-close", false, "stop when the supervising native shell exits")
 	flag.Parse()
 
 	if *showVersion {
@@ -244,6 +247,12 @@ func main() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	if *exitOnStdinClose {
+		go func() {
+			_, _ = io.Copy(io.Discard, os.Stdin)
+			cancel()
+		}()
+	}
 	go app.runDiscovery(ctx)
 	if !*noOpen {
 		go func() {
@@ -436,6 +445,7 @@ func newApp(uiAddress string) (*App, error) {
 		statePath:   filepath.Join(configDir, "state.json"),
 		uiAddress:   uiAddress,
 		maxBytes:    defaultMaxBytes,
+		discovery:   "starting",
 	}
 	if override := strings.TrimSpace(os.Getenv("UNIDROP_DOWNLOAD_DIR")); override != "" {
 		a.downloadDir = override
@@ -708,6 +718,7 @@ func (a *App) localMux() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", a.handleUI)
 	mux.HandleFunc("/api/info", a.handleLocalInfo)
+	mux.HandleFunc("/api/summary", a.handleLocalSummary)
 	mux.HandleFunc("/api/peers", a.handlePeers)
 	mux.HandleFunc("/api/transfers", a.handleTransfers)
 	mux.HandleFunc("/api/offers", a.handleLocalOffers)
@@ -806,6 +817,35 @@ func (a *App) handleLocalInfo(w http.ResponseWriter, r *http.Request) {
 		"version": appVersion, "id": a.identity.ID, "name": a.identity.Name,
 		"os": runtime.GOOS, "fingerprint": a.fingerprint, "pairing_code": a.pairingCode,
 		"download_dir": a.downloadDir, "max_bytes": a.maxBytes, "receive_mode": a.receiveMode,
+		"peer_port": a.peerPort, "lan_addresses": localLANAddresses(),
+		"discovery_status": a.discovery, "discovery_error": a.discoveryErr,
+	}
+	a.mu.RUnlock()
+	writeJSON(w, http.StatusOK, data)
+}
+
+func (a *App) handleLocalSummary(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	now := time.Now()
+	a.mu.RLock()
+	nearby := 0
+	for _, peer := range a.discovered {
+		if now.Sub(peer.LastSeen) <= peerLifetime {
+			nearby++
+		}
+	}
+	pending := 0
+	for _, offer := range a.offers {
+		if offer.Status == "pending" && !offerExpired(offer, now) {
+			pending++
+		}
+	}
+	data := map[string]any{
+		"nearby": nearby, "pending": pending, "receive_mode": a.receiveMode,
+		"discovery_status": a.discovery,
 	}
 	a.mu.RUnlock()
 	writeJSON(w, http.StatusOK, data)
@@ -1720,19 +1760,39 @@ func (a *App) updateTransferBytes(t *Transfer, bytes int64) {
 }
 
 func (a *App) runDiscovery(ctx context.Context) {
+	for {
+		err := a.discoverySession(ctx)
+		if ctx.Err() != nil {
+			return
+		}
+		a.setDiscoveryStatus("retrying", err)
+		log.Printf("automatic discovery retrying: %v", err)
+		timer := time.NewTimer(3 * time.Second)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
+}
+
+func (a *App) discoverySession(ctx context.Context) error {
 	group, err := net.ResolveUDPAddr("udp4", discoveryAddress)
 	if err != nil {
-		log.Printf("discovery disabled: %v", err)
-		return
+		return err
 	}
 	conn, err := net.ListenMulticastUDP("udp4", nil, group)
 	if err != nil {
-		log.Printf("multicast discovery unavailable (manual address still works): %v", err)
-		return
+		return err
 	}
 	defer conn.Close()
 	_ = conn.SetReadBuffer(64 << 10)
-	go a.announceLoop(ctx, group)
+	sessionContext, cancel := context.WithCancel(ctx)
+	defer cancel()
+	announceErrors := make(chan error, 1)
+	go func() { announceErrors <- a.announceLoop(sessionContext, group) }()
+	a.setDiscoveryStatus("active", nil)
 	buffer := make([]byte, 4096)
 	for {
 		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
@@ -1741,12 +1801,14 @@ func (a *App) runDiscovery(ctx context.Context) {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				select {
 				case <-ctx.Done():
-					return
+					return ctx.Err()
+				case announceErr := <-announceErrors:
+					return announceErr
 				default:
 					continue
 				}
 			}
-			continue
+			return err
 		}
 		var packet discoveryPacket
 		if err := json.Unmarshal(buffer[:n], &packet); err != nil || packet.Version != protocolVersion || packet.ID == a.identity.ID {
@@ -1762,6 +1824,17 @@ func (a *App) runDiscovery(ctx context.Context) {
 		}
 		a.recordDiscovered(peer)
 	}
+}
+
+func (a *App) setDiscoveryStatus(status string, err error) {
+	a.mu.Lock()
+	a.discovery = status
+	if err == nil {
+		a.discoveryErr = ""
+	} else {
+		a.discoveryErr = err.Error()
+	}
+	a.mu.Unlock()
 }
 
 func (a *App) recordDiscovered(peer *DiscoveredPeer) {
@@ -1786,29 +1859,33 @@ func (a *App) recordDiscovered(peer *DiscoveredPeer) {
 	a.discovered[peer.ID] = peer
 }
 
-func (a *App) announceLoop(ctx context.Context, group *net.UDPAddr) {
+func (a *App) announceLoop(ctx context.Context, group *net.UDPAddr) error {
 	conn, err := net.DialUDP("udp4", nil, group)
 	if err != nil {
-		log.Printf("discovery announcements unavailable: %v", err)
-		return
+		return err
 	}
 	defer conn.Close()
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
-	announce := func() {
+	announce := func() error {
 		packet, _ := json.Marshal(discoveryPacket{
 			Version: protocolVersion, ID: a.identity.ID, Name: a.identity.Name,
 			OS: runtime.GOOS, Port: a.peerPort, Fingerprint: a.fingerprint,
 		})
-		_, _ = conn.Write(packet)
+		_, err := conn.Write(packet)
+		return err
 	}
-	announce()
+	if err := announce(); err != nil {
+		return err
+	}
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		case <-ticker.C:
-			announce()
+			if err := announce(); err != nil {
+				return err
+			}
 		}
 	}
 }
@@ -2036,6 +2113,37 @@ func clientIP(remote string) string {
 	return host
 }
 
+func localLANAddresses() []string {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return []string{}
+	}
+	seen := make(map[string]bool)
+	addresses := make([]string, 0, 4)
+	for _, networkInterface := range interfaces {
+		if networkInterface.Flags&net.FlagUp == 0 || networkInterface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		assigned, err := networkInterface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, address := range assigned {
+			ip, _, err := net.ParseCIDR(address.String())
+			if err != nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.To4() == nil {
+				continue
+			}
+			value := ip.String()
+			if !seen[value] {
+				seen[value] = true
+				addresses = append(addresses, value)
+			}
+		}
+	}
+	sort.Strings(addresses)
+	return addresses
+}
+
 func probeUI(base string) bool {
 	client := &http.Client{Timeout: 700 * time.Millisecond}
 	resp, err := client.Get(base + "api/info")
@@ -2101,34 +2209,38 @@ const uiHTML = `<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>UniDrop</title>
 <style>
-:root{color-scheme:dark;--ink:#f5f7fb;--muted:#9ba7ba;--card:#111827cc;--line:#29344a;--blue:#5ba7ff;--green:#5ee2a0;--red:#ff7c8f}
-*{box-sizing:border-box}body{margin:0;min-height:100vh;font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);background:radial-gradient(circle at 12% 10%,#17305c 0,transparent 32%),radial-gradient(circle at 88% 8%,#27366b 0,transparent 29%),#070b13}
-main{width:min(1040px,calc(100% - 28px));margin:0 auto;padding:28px 0 60px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px}.brand{display:flex;align-items:center;gap:13px}.logo{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(145deg,#68c6ff,#675bff);box-shadow:0 10px 35px #488dff55;font-size:23px}.brand h1{margin:0;font-size:24px}.brand p{margin:1px 0 0;color:var(--muted);font-size:13px}.button,button{border:1px solid var(--line);background:#172033;color:var(--ink);border-radius:11px;padding:10px 14px;font:inherit;font-weight:650;cursor:pointer}button:hover{border-color:#536582}.primary{background:linear-gradient(135deg,#4f92ff,#7668ff);border:0}.ghost{background:transparent}.grid{display:grid;grid-template-columns:1.45fr .8fr;gap:18px}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:19px;box-shadow:0 18px 65px #0005;backdrop-filter:blur(12px)}h2{font-size:15px;margin:0 0 14px;color:#dce5f3}.code{font:700 20px/1.25 ui-monospace,SFMono-Regular,monospace;letter-spacing:1px;margin:13px 0 12px;white-space:nowrap}.muted{color:var(--muted)}.small{font-size:12px}.devices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;min-height:94px}.device{display:flex;align-items:center;gap:11px;text-align:left;width:100%;padding:13px;background:#0d1422;border:1px solid var(--line);border-radius:13px}.device.selected{border-color:var(--blue);box-shadow:0 0 0 2px #5ba7ff22}.device.offline{opacity:.55}.os{width:37px;height:37px;border-radius:10px;background:#202b40;display:grid;place-items:center;font-size:18px}.device strong,.device span{display:block;overflow:hidden;text-overflow:ellipsis}.status{color:var(--green);font-size:12px}.offline .status{color:var(--muted)}.drop{display:block;cursor:pointer;border:1.5px dashed #40506c;border-radius:16px;padding:27px;text-align:center;margin-top:13px;transition:.15s}.drop.drag{border-color:var(--blue);background:#5ba7ff12}.drop input{display:none}.drop strong{display:block;font-size:17px;margin-bottom:4px}.sendbar{display:flex;gap:9px;align-items:center;margin-top:12px}.sendbar input,.manual input{min-width:0;flex:1;border:1px solid var(--line);background:#09101d;color:var(--ink);border-radius:10px;padding:10px 12px;font:inherit}.progress{height:7px;background:#202a3c;border-radius:10px;overflow:hidden;margin-top:10px}.progress i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--blue),var(--green));transition:.1s}.manual{display:flex;gap:8px;margin-top:10px}.transfer{padding:10px 0;border-top:1px solid #202a3c;display:grid;grid-template-columns:1fr auto;gap:4px}.transfer:first-child{border-top:0}.transfer strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.good{color:var(--green)}.bad{color:var(--red)}.empty{padding:22px 8px;color:var(--muted);text-align:center}.wide{grid-column:1/-1}.toast{position:fixed;right:18px;bottom:18px;max-width:360px;padding:13px 16px;border-radius:12px;background:#202b40;border:1px solid #46546b;box-shadow:0 15px 50px #0008;display:none}.toast.bad{display:block;border-color:#7c3c4c}.toast.good{display:block;border-color:#39755b}@media(max-width:760px){.grid{grid-template-columns:1fr}.devices{grid-template-columns:1fr}.top{align-items:flex-start}.top>.button{display:none}}
-.sectionhead{display:flex;align-items:center;justify-content:space-between;gap:12px}.sectionhead h2{margin:0}.mode{border:1px solid var(--line);background:#09101d;color:var(--ink);border-radius:10px;padding:8px 10px;font:inherit}.offerlist{display:grid;gap:10px;margin-top:14px}.offer{display:flex;align-items:center;gap:13px;background:#0d1422;border:1px solid #35435c;border-radius:14px;padding:13px}.offericon{width:40px;height:40px;flex:0 0 auto;border-radius:11px;display:grid;place-items:center;background:#283651;color:var(--blue);font-size:20px}.offermain{min-width:0;flex:1}.offermain strong,.offermain span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.offeractions{display:flex;gap:7px}.decline{color:var(--red)}@media(max-width:560px){.sectionhead,.offer{align-items:stretch;flex-direction:column}.offericon{display:none}.offeractions button{flex:1}.mode{width:100%}}
+:root{color-scheme:dark;--ink:#f7f7fa;--muted:#888d99;--card:#0a0c11e8;--line:#22252e;--blue:#7b8cff;--violet:#9a6cff;--green:#52d99a;--red:#ff7088}
+*{box-sizing:border-box}html{background:#020304}body{margin:0;min-height:100vh;font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);background:radial-gradient(circle at 14% 0,#161329 0,transparent 34%),radial-gradient(circle at 92% 4%,#101b2a 0,transparent 31%),#020304}
+main{width:min(1040px,calc(100% - 28px));margin:0 auto;padding:28px 0 60px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px}.brand{display:flex;align-items:center;gap:13px}.logo{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(145deg,#4f66ff,#9a5cff);box-shadow:0 10px 35px #675dff35;font-size:23px}.brand h1{margin:0;font-size:24px;letter-spacing:-.5px}.brand p{margin:1px 0 0;color:var(--muted);font-size:13px}.button,button{border:1px solid var(--line);background:#12151c;color:var(--ink);border-radius:11px;padding:10px 14px;font:inherit;font-weight:650;cursor:pointer;transition:.16s ease}button:hover{border-color:#4a4f60;background:#171a23}.primary{background:linear-gradient(135deg,#526dff,#8b5dff);border:0;box-shadow:0 7px 24px #675dff25}.ghost{background:transparent}.grid{display:grid;grid-template-columns:1.45fr .8fr;gap:18px}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:19px;box-shadow:0 18px 65px #0008;backdrop-filter:blur(18px)}h2{font-size:15px;margin:0 0 14px;color:#e8e9ee}.code{font:700 20px/1.25 ui-monospace,SFMono-Regular,monospace;letter-spacing:1px;margin:13px 0 12px;white-space:nowrap}.muted{color:var(--muted)}.small{font-size:12px}.devices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;min-height:94px}.device{display:flex;align-items:center;gap:11px;text-align:left;width:100%;padding:13px;background:#080a0f;border:1px solid var(--line);border-radius:13px}.device.selected{border-color:var(--blue);box-shadow:0 0 0 2px #7b8cff1f}.device.offline{opacity:.55}.os{width:37px;height:37px;border-radius:10px;background:#181b24;display:grid;place-items:center;font-size:18px}.device strong,.device span{display:block;overflow:hidden;text-overflow:ellipsis}.status{color:var(--green);font-size:12px}.offline .status{color:var(--muted)}.drop{display:block;cursor:pointer;border:1.5px dashed #343844;border-radius:16px;padding:27px;text-align:center;margin-top:13px;transition:.15s;background:#07090d}.drop:hover,.drop.drag{border-color:var(--blue);background:#7b8cff0d}.drop input{display:none}.drop strong{display:block;font-size:17px;margin-bottom:4px}.sendbar{display:flex;gap:9px;align-items:center;margin-top:12px}.sendbar input,.manual input{min-width:0;flex:1;border:1px solid var(--line);background:#05070a;color:var(--ink);border-radius:10px;padding:10px 12px;font:inherit}.progress{height:5px;background:#171921;border-radius:10px;overflow:hidden;margin-top:10px}.progress i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--blue),var(--green));transition:.1s}.manual{display:flex;gap:8px;margin-top:10px}.transfer{padding:10px 0;border-top:1px solid #1a1d24;display:grid;grid-template-columns:1fr auto;gap:4px}.transfer:first-child{border-top:0}.transfer strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.good{color:var(--green)}.bad{color:var(--red)}.empty{padding:22px 8px;color:var(--muted);text-align:center}.empty strong,.empty span{display:block}.wide{grid-column:1/-1}.toast{position:fixed;right:18px;bottom:18px;z-index:10;max-width:360px;padding:13px 16px;border-radius:12px;background:#151821;border:1px solid #353946;box-shadow:0 15px 50px #000b;display:none}.toast.bad{display:block;border-color:#713442}.toast.good{display:block;border-color:#2c6850}@media(max-width:760px){.grid{grid-template-columns:1fr}.devices{grid-template-columns:1fr}.top{align-items:flex-start}.top>.button{display:none}}
+.sectionhead{display:flex;align-items:center;justify-content:space-between;gap:12px}.sectionhead h2{margin:0}.mode{border:1px solid var(--line);background:#05070a;color:var(--ink);border-radius:10px;padding:8px 10px;font:inherit}.offerlist{display:grid;gap:10px;margin-top:14px}.offer{display:flex;align-items:center;gap:13px;background:#07090d;border:1px solid #2a2e39;border-radius:14px;padding:13px}.offericon{width:40px;height:40px;flex:0 0 auto;border-radius:11px;display:grid;place-items:center;background:#171b2a;color:var(--blue);font-size:20px}.offermain{min-width:0;flex:1}.offermain strong,.offermain span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.offeractions{display:flex;gap:7px}.decline{color:var(--red)}.live{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12px}.live i{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 12px #52d99a99}.fallback{margin-top:10px;border-top:1px solid #1b1e25;padding-top:10px}.fallback summary{cursor:pointer;color:var(--muted);font-size:12px;list-style:none}.fallback summary::-webkit-details-marker{display:none}.fallback summary:before{content:'＋';margin-right:6px}.fallback[open] summary:before{content:'−'}.addresshint{margin-top:7px;color:#666b76;font-size:11px}.radar{width:36px;height:36px;margin:0 auto 9px;border:1px solid #4e5680;border-radius:50%;position:relative}.radar:after{content:'';position:absolute;inset:7px;border:1px solid #30364e;border-radius:50%;animation:pulse 1.8s infinite}.shellbar{display:none}.pairaction{white-space:nowrap}@keyframes pulse{0%{transform:scale(.65);opacity:.3}60%{transform:scale(1.35);opacity:1}100%{transform:scale(1.55);opacity:0}}
+body.compact{background:#020304}body.compact main{width:100%;padding:12px}body.compact .top{margin:1px 2px 12px}body.compact .logo{width:36px;height:36px;border-radius:11px;font-size:18px}body.compact .brand h1{font-size:19px}body.compact .top>.button{display:none}body.compact .grid{display:flex;flex-direction:column;gap:9px}body.compact .card{padding:14px;border-radius:15px;box-shadow:none;background:#080a0ef2}body.compact #incomingCard{order:1}body.compact #nearbyCard{order:2}body.compact #sendCard{order:3}body.compact #activityCard{order:4}body.compact #pairCard{order:5}body.compact .devices{grid-template-columns:1fr;min-height:74px}body.compact .empty{padding:16px 6px}body.compact .drop{padding:18px;margin-top:9px}body.compact .drop strong{font-size:15px}body.compact .code{font-size:17px}body.compact .shellbar{display:flex;order:6;gap:8px;padding:2px}body.compact .shellbar button{flex:1;color:var(--muted);font-size:12px;background:#080a0e}body.compact .toast{position:fixed;left:12px;right:12px;bottom:12px;max-width:none}body.compact #pairCard .paircopy{font-size:11px}@media(max-width:560px){.sectionhead,.offer{align-items:stretch;flex-direction:column}.offericon{display:none}.offeractions button{flex:1}.mode{width:100%}}
 </style>
 </head>
 <body><main>
 <header class="top"><div class="brand"><div class="logo">⇄</div><div><h1>UniDrop</h1><p id="deviceName">Secure local file sharing</p></div></div><button class="button" onclick="openDownloads()">Open received files</button></header>
 <div class="grid">
-<section class="card"><h2>Nearby devices</h2><div id="devices" class="devices"><div class="empty">Looking on your local network…</div></div><div class="manual"><input id="manual" placeholder="Can't see it? Enter 192.168.1.20:43338"><button onclick="addPeer()">Add</button></div></section>
-<aside class="card"><h2>Pair this device</h2><div class="muted small">Copy this one-time key to the sending device.</div><div id="code" class="code">----&nbsp;----&nbsp;----&nbsp;----</div><button class="ghost small" onclick="copyCode()">Copy key</button> <button class="ghost small" onclick="rotateCode()">Rotate</button><div class="muted small" style="margin-top:13px">TLS 1.3 • certificate pinning • local network only</div></aside>
-<section class="card wide"><div class="sectionhead"><h2>Incoming requests</h2><select id="receiveMode" class="mode" onchange="setReceiveMode()" aria-label="Receive mode"><option value="ask">Ask every time</option><option value="trusted">Auto-accept paired devices</option><option value="off">Receiving paused</option></select></div><div id="offers" class="offerlist"><div class="empty">No one is waiting to send you a file</div></div></section>
-<section class="card"><h2>Send files <span id="selectedLabel" class="muted">— choose a device</span></h2><label class="drop" id="drop"><input id="files" type="file" multiple><strong>Drop files here</strong><span class="muted">or click to choose files</span></label><div class="sendbar"><input id="pairCode" maxlength="19" autocomplete="off" placeholder="Other device's pairing key"><button class="primary" id="send" onclick="sendSelected()">Send</button></div><div class="progress"><i id="progress"></i></div><div id="queue" class="muted small" style="margin-top:7px"></div></section>
-<aside class="card"><h2>Recent activity</h2><div id="transfers"><div class="empty">No transfers yet</div></div></aside>
+<section class="card" id="nearbyCard"><div class="sectionhead"><h2>Nearby devices</h2><span class="live"><i></i><span id="discoveryLabel">Searching automatically</span></span></div><div id="devices" class="devices"><div class="empty"><span class="radar"></span><strong>Searching nearby…</strong><span class="small">UniDrop scans this network automatically.</span></div></div><details class="fallback"><summary>Connect by address instead</summary><div class="manual"><input id="manual" placeholder="Other Mac's address, e.g. 192.168.0.25:43338"><button onclick="addPeer()">Add</button></div><div class="addresshint" id="addressHint"></div></details></section>
+<aside class="card" id="pairCard"><h2>Pair this device</h2><div class="muted small paircopy">Use this one-time key on the sending device.</div><div id="code" class="code">----&nbsp;----&nbsp;----&nbsp;----</div><button class="ghost small" onclick="copyCode()">Copy key</button> <button class="ghost small" onclick="rotateCode()">Rotate</button><div class="muted small" style="margin-top:13px">TLS 1.3 • certificate pinning • local network only</div></aside>
+<section class="card wide" id="incomingCard"><div class="sectionhead"><h2>Incoming requests</h2><select id="receiveMode" class="mode" onchange="setReceiveMode()" aria-label="Receive mode"><option value="ask">Ask every time</option><option value="trusted">Auto-accept paired devices</option><option value="off">Receiving paused</option></select></div><div id="offers" class="offerlist"><div class="empty">No one is waiting to send you a file</div></div></section>
+<section class="card" id="sendCard"><h2>Send files <span id="selectedLabel" class="muted">— choose a device</span></h2><label class="drop" id="drop"><input id="files" type="file" multiple><strong>Drop files here</strong><span class="muted">or click to choose files</span></label><div class="sendbar"><input id="pairCode" maxlength="19" autocomplete="off" placeholder="Other device's pairing key"><button class="ghost pairaction" id="pairButton" onclick="pairNow()">Pair</button><button class="primary" id="send" onclick="sendSelected()">Send</button></div><div class="progress"><i id="progress"></i></div><div id="queue" class="muted small" style="margin-top:7px"></div></section>
+<aside class="card" id="activityCard"><h2>Recent activity</h2><div id="transfers"><div class="empty">No transfers yet</div></div></aside>
+<footer class="shellbar"><button onclick="shellAction('open')">Open full window</button><button onclick="shellAction('quit')">Quit UniDrop</button></footer>
 </div></main><div id="toast" class="toast"></div>
 <script>
-let selected=null,chosen=[],peers=[];const $=id=>document.getElementById(id);
+const compact=new URLSearchParams(location.search).get('compact')==='1';document.body.classList.toggle('compact',compact);let selected=null,chosen=[],peers=[];const $=id=>document.getElementById(id);
 async function api(path,options={}){options.headers={...(options.headers||{}),'X-UniDrop-UI':'1'};const r=await fetch(path,options);let body={};try{body=await r.json()}catch{}if(!r.ok)throw new Error(body.error||r.statusText);return body}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function icon(os){return os==='darwin'?'●':os==='windows'?'⊞':os==='linux'?'◆':'◇'}
-async function refresh(){try{const [info,p,t,o]=await Promise.all([api('/api/info'),api('/api/peers'),api('/api/transfers'),api('/api/offers')]);peers=p;$('deviceName').textContent=info.name+' • '+info.os;$('code').textContent=info.pairing_code;$('receiveMode').value=info.receive_mode;renderPeers();renderTransfers(t);renderOffers(o)}catch(e){toast(e.message,false)}}
-function renderPeers(){const online=peers.filter(p=>p.online);if(!online.length){$('devices').innerHTML='<div class="empty">No devices found yet. Make sure UniDrop is open on both machines.</div>';return}$('devices').innerHTML=online.map(p=>'<button class="device '+(selected===p.id?'selected':'')+'" data-peer="'+p.id+'"><span class="os">'+icon(p.os)+'</span><span><strong>'+esc(p.name)+'</strong><span class="status">'+(p.trusted?'Paired and ready':'Code required')+'</span></span></button>').join('');document.querySelectorAll('[data-peer]').forEach(b=>b.onclick=()=>choose(b.dataset.peer))}
-function choose(id){selected=id;const p=peers.find(x=>x.id===id);$('selectedLabel').textContent=p?'— '+p.name:'';$('pairCode').style.display=p?.trusted?'none':'block';renderPeers()}
+async function refresh(){try{const [info,p,t,o]=await Promise.all([api('/api/info'),api('/api/peers'),api('/api/transfers'),api('/api/offers')]);peers=p;const online=p.filter(x=>x.online);$('deviceName').textContent=info.name+' • '+(online.length?online.length+' nearby':'scanning nearby');$('code').textContent=info.pairing_code;$('receiveMode').value=info.receive_mode;$('discoveryLabel').textContent=online.length?online.length+' found':info.discovery_status==='retrying'?'Retrying search':'Searching automatically';const addresses=(info.lan_addresses||[]).map(x=>x+':'+info.peer_port);$('addressHint').textContent=addresses.length?'This Mac: '+addresses.join(' • '):'Automatic search is on. Manual address is only a fallback.';renderPeers();renderTransfers(t);renderOffers(o)}catch(e){toast(e.message,false)}}
+function renderPeers(){const online=peers.filter(p=>p.online);if(!online.length){$('devices').innerHTML='<div class="empty"><span class="radar"></span><strong>Searching nearby…</strong><span class="small">Keep UniDrop open on the other computer.</span></div>';return}$('devices').innerHTML=online.map(p=>'<button class="device '+(selected===p.id?'selected':'')+'" data-peer="'+p.id+'"><span class="os">'+icon(p.os)+'</span><span><strong>'+esc(p.name)+'</strong><span class="status">'+(p.trusted?'Paired and ready':'Tap to pair')+'</span></span></button>').join('');document.querySelectorAll('[data-peer]').forEach(b=>b.onclick=()=>choose(b.dataset.peer))}
+function choose(id){selected=id;const p=peers.find(x=>x.id===id);$('selectedLabel').textContent=p?'— '+p.name:'';const needsPair=!p?.trusted;$('pairCode').style.display=needsPair?'block':'none';$('pairButton').style.display=needsPair?'block':'none';renderPeers()}
 function renderTransfers(items){$('transfers').innerHTML=items.length?items.slice(0,6).map(t=>'<div class="transfer"><strong>'+(t.direction==='send'?'↑':'↓')+' '+esc(t.file)+'</strong><span class="'+(t.status==='complete'?'good':t.status==='failed'?'bad':'muted')+'">'+esc(t.status)+'</span><span class="muted small">'+esc(t.peer)+'</span><span class="muted small">'+size(t.bytes)+'</span></div>').join(''):'<div class="empty">No transfers yet</div>'}
 function renderOffers(items){$('offers').innerHTML=items.length?items.map(o=>'<div class="offer"><span class="offericon">↓</span><span class="offermain"><strong>'+esc(o.file)+'</strong><span class="muted">From '+esc(o.sender_name)+' • '+size(o.bytes)+'</span></span>'+(o.status==='pending'?'<span class="offeractions"><button class="ghost decline" data-offer-action="decline" data-offer="'+o.id+'">Decline</button><button class="primary" data-offer-action="accept" data-offer="'+o.id+'">Accept</button></span>':'<span class="status">Receiving…</span>')+'</div>').join(''):'<div class="empty">No one is waiting to send you a file</div>';document.querySelectorAll('[data-offer-action]').forEach(b=>b.onclick=()=>actOffer(b.dataset.offer,b.dataset.offerAction))}
 function size(n){if(!n)return '0 B';const u=['B','KB','MB','GB','TB'];let i=0;while(n>=1024&&i<u.length-1){n/=1024;i++}return n.toFixed(i?1:0)+' '+u[i]}
 const drop=$('drop'),input=$('files');drop.onclick=()=>input.click();input.onchange=()=>setFiles([...input.files]);['dragenter','dragover'].forEach(e=>drop.addEventListener(e,x=>{x.preventDefault();drop.classList.add('drag')}));['dragleave','drop'].forEach(e=>drop.addEventListener(e,x=>{x.preventDefault();drop.classList.remove('drag')}));drop.addEventListener('drop',e=>setFiles([...e.dataTransfer.files]));function setFiles(f){chosen=f;$('queue').textContent=f.length?f.length+' file'+(f.length===1?'':'s')+' • '+size(f.reduce((n,x)=>n+x.size,0)):''}
-async function ensurePaired(){let p=peers.find(x=>x.id===selected);if(!p)throw new Error('Choose an online device');if(p.trusted)return;const code=$('pairCode').value.trim();if(!/^[0-9a-fA-F]{4}(-?[0-9a-fA-F]{4}){3}$/.test(code))throw new Error("Enter the pairing key shown on "+p.name);await api('/api/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({peer_id:p.id,code})});await refresh();p=peers.find(x=>x.id===selected);if(!p?.trusted)throw new Error('Pairing did not complete')}
+async function pairSelected(announce=true){let p=peers.find(x=>x.id===selected);if(!p)throw new Error('Choose a nearby device first');if(p.trusted)return;const code=$('pairCode').value.trim();if(!/^[0-9a-fA-F]{4}(-?[0-9a-fA-F]{4}){3}$/.test(code))throw new Error("Enter the pairing key shown on "+p.name);await api('/api/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({peer_id:p.id,code})});await refresh();p=peers.find(x=>x.id===selected);if(!p?.trusted)throw new Error('Pairing did not complete');if(announce)toast('Paired securely with '+p.name,true)}
+async function pairNow(){try{await pairSelected(true)}catch(e){toast(e.message,false)}}
+async function ensurePaired(){const p=peers.find(x=>x.id===selected);if(!p)throw new Error('Choose an online device');if(!p.trusted)await pairSelected(false)}
 async function sendSelected(){try{if(!chosen.length)throw new Error('Choose at least one file');await ensurePaired();$('send').disabled=true;for(let i=0;i<chosen.length;i++){const file=chosen[i];$('queue').textContent='Sending '+(i+1)+' of '+chosen.length+': '+file.name;await upload(file,n=>{$('progress').style.width=((i+n/file.size)/chosen.length*100)+'%'})}toast('Files sent securely',true);chosen=[];input.value='';$('queue').textContent='';setTimeout(()=>$('progress').style.width='0',900);await refresh()}catch(e){toast(e.message,false)}finally{$('send').disabled=false}}
 function upload(file,onProgress){return new Promise((resolve,reject)=>{const x=new XMLHttpRequest();x.open('POST','/api/send?peer='+encodeURIComponent(selected)+'&filename='+encodeURIComponent(file.name));x.setRequestHeader('X-UniDrop-UI','1');x.setRequestHeader('Content-Type','application/octet-stream');x.upload.onprogress=e=>{if(e.lengthComputable)onProgress(e.loaded)};x.onload=()=>{let b={};try{b=JSON.parse(x.responseText)}catch{};x.status>=200&&x.status<300?resolve(b):reject(new Error(b.error||x.statusText))};x.onerror=()=>reject(new Error('Network connection failed'));x.send(file)})}
 async function addPeer(){try{const address=$('manual').value.trim();if(!address)throw new Error('Enter the other device address');await api('/api/add-peer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({address})});$('manual').value='';await refresh();toast('Device added',true)}catch(e){toast(e.message,false)}}
@@ -2137,6 +2249,7 @@ async function actOffer(id,action){try{await api('/api/offer-action',{method:'PO
 async function setReceiveMode(){try{const mode=$('receiveMode').value;await api('/api/receive-mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode})});toast(mode==='off'?'Incoming files paused':mode==='ask'?'Approval required for every file':'Paired devices will be accepted automatically',true);await refresh()}catch(e){toast(e.message,false)}}
 async function copyCode(){try{await navigator.clipboard.writeText($('code').textContent);toast('Pairing key copied',true)}catch(e){toast('Copy the key manually',false)}}
 async function openDownloads(){try{await api('/api/open-downloads',{method:'POST'})}catch(e){toast(e.message,false)}}
+function shellAction(action){if(window.webkit?.messageHandlers?.unidrop){window.webkit.messageHandlers.unidrop.postMessage(action);return}if(action==='open')location.href='/' ;else toast('Quit from the UniDrop menu-bar app',false)}
 let toastTimer;function toast(message,ok){const t=$('toast');t.textContent=message;t.className='toast '+(ok?'good':'bad');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.className='toast',4500)}
-refresh();setInterval(refresh,3000);
+refresh();setInterval(refresh,compact?1800:3000);
 </script></body></html>`

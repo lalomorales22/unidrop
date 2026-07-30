@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -216,6 +217,32 @@ func TestCLIControlRequiresPrivateToken(t *testing.T) {
 	a.localMux().ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("authenticated command bridge returned %d: %s", response.Code, response.Body.String())
+	}
+}
+
+func TestMenuSummaryReportsNearbyDevicesAndApprovals(t *testing.T) {
+	a := testApp(t, t.TempDir(), "Menu Mac")
+	a.discovery = "active"
+	a.discovered[strings.Repeat("c", 32)] = &DiscoveredPeer{LastSeen: time.Now()}
+	a.offers[strings.Repeat("d", 32)] = &IncomingOffer{
+		Status: "pending", Expires: time.Now().Add(time.Minute).UTC().Format(time.RFC3339),
+	}
+	request := httptest.NewRequest(http.MethodGet, "/api/summary", nil)
+	response := httptest.NewRecorder()
+	a.localMux().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("menu summary returned %d: %s", response.Code, response.Body.String())
+	}
+	var summary struct {
+		Nearby    int    `json:"nearby"`
+		Pending   int    `json:"pending"`
+		Discovery string `json:"discovery_status"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&summary); err != nil {
+		t.Fatal(err)
+	}
+	if summary.Nearby != 1 || summary.Pending != 1 || summary.Discovery != "active" {
+		t.Fatalf("unexpected menu summary: %+v", summary)
 	}
 }
 
