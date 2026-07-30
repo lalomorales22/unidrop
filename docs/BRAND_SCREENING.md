@@ -8,9 +8,8 @@ claim of ownership. Search results and domain status can change.
 ## Owner decision
 
 The owner approved **Xendfile** as the new project name and retired **UniDrop**
-as the user-facing brand. The current GitHub repository keeps its existing
-`lalomorales22/unidrop` URL until the owner separately approves a repository
-rename; repository URLs are identifiers, not product branding.
+as the user-facing brand. On July 30, 2026, the owner also approved renaming the
+public GitHub repository to `lalomorales22/xendfile`.
 
 The current open-source alpha will proceed without paid legal review. Before a
 material commercial launch, app-store listing, domain purchase, advertising

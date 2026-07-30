@@ -9,7 +9,7 @@ Windows, and Linux take priority over feature count.
 - Use an issue for a substantial feature or protocol change before investing in
   an implementation.
 - Report exploitable security problems through a
-  [private security advisory](https://github.com/lalomorales22/unidrop/security/advisories/new),
+  [private security advisory](https://github.com/lalomorales22/xendfile/security/advisories/new),
   not a public issue.
 - Keep same-LAN transfers local, free, and usable without an account.
 - Prefer the Go standard library and small auditable implementations.

@@ -38,24 +38,23 @@ Expected archive metadata:
 
 ```text
 Commit:  0f4295268e704cadf40f9b892e19115a672960cd
-Bytes:   3205035
-SHA-256: b3219892170a3d6cdc413edc6d1126588e844a1b1c5753a07e447c19f711b4d5
+Bytes:   3206023
+SHA-256: 7f9ae83ce2b820f0902b01bc7c9fcee9480b710dfefe1ec5fbdfc62c6f75ddc6
 ```
 
 After downloading, compare the locally computed SHA-256 before extracting it:
 
 ```sh
-shasum -a 256 unidrop-0f4295268e704cadf40f9b892e19115a672960cd.zip
+shasum -a 256 xendfile-0f4295268e704cadf40f9b892e19115a672960cd.zip
 ```
 
 PowerShell:
 
 ```powershell
-Get-FileHash -Algorithm SHA256 .\unidrop-0f4295268e704cadf40f9b892e19115a672960cd.zip
+Get-FileHash -Algorithm SHA256 .\xendfile-0f4295268e704cadf40f9b892e19115a672960cd.zip
 ```
 
-GitHub currently names this source archive after the unchanged repository slug,
-`unidrop`. Its contents and product identity are Xendfile.
+GitHub names this source archive after the Xendfile repository slug.
 
 The hash proves that the bytes match the documented snapshot. It does not prove
 publisher identity because this alpha archive has no Xendfile signature.

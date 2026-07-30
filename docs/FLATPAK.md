@@ -9,9 +9,8 @@ open.
 ## Current development design
 
 - Application ID: `io.github.lalomorales22.xendfile`, matching the owner-approved
-  product name and GitHub account. It remains a development identity until the
-  repository slug and any future public Flatpak identity are deliberately
-  finalized.
+  product name, GitHub account, and repository slug. It remains a development
+  identity until a future public Flatpak identity is deliberately finalized.
 - Runtime/SDK branch: Freedesktop `25.08`, the current development selection as
   of July 30, 2026. A future submission must re-check and use Flathub's latest
   supported runtime at that time.

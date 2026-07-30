@@ -48,7 +48,7 @@ test("labels the unsigned source alpha honestly and links release resources", ()
 test("binds every alpha download to one immutable verified source snapshot", async () => {
   assert.match(snapshot.commit, /^[a-f0-9]{40}$/);
   assert.equal(snapshot.shortCommit, snapshot.commit.slice(0, 7));
-  assert.equal(snapshot.url, `https://github.com/lalomorales22/unidrop/archive/${snapshot.commit}.zip`);
+  assert.equal(snapshot.url, `https://github.com/lalomorales22/xendfile/archive/${snapshot.commit}.zip`);
   assert.match(snapshot.sha256, /^[a-f0-9]{64}$/);
   assert.ok(Number.isSafeInteger(snapshot.size) && snapshot.size > 0);
   assert.doesNotMatch(html, /archive\/refs\/heads\/main\.zip/);

@@ -16,7 +16,7 @@ if (!/^[a-f0-9]{40}$/.test(snapshot.commit)) throw new Error("source snapshot co
 if (snapshot.shortCommit !== snapshot.commit.slice(0, 7)) throw new Error("source snapshot short commit is inconsistent");
 if (!Number.isSafeInteger(snapshot.size) || snapshot.size <= 0) throw new Error("source snapshot size must be a positive integer");
 if (!/^[a-f0-9]{64}$/.test(snapshot.sha256)) throw new Error("source snapshot SHA-256 is malformed");
-if (snapshot.url !== `https://github.com/lalomorales22/unidrop/archive/${snapshot.commit}.zip`) throw new Error("source snapshot URL is not bound to its commit");
+if (snapshot.url !== `https://github.com/lalomorales22/xendfile/archive/${snapshot.commit}.zip`) throw new Error("source snapshot URL is not bound to its commit");
 if (!/^\d+(\.\d+)? (KiB|MiB)$/.test(snapshot.displaySize)) throw new Error("source snapshot display size is malformed");
 const replacements = {
   "{{VERSION}}": version,

@@ -13,8 +13,8 @@
     <p>Pairing, receiver approval, TLS 1.3, and pinned device certificates keep transfers private without a cloud account.</p>
   </description>
   <launchable type="desktop-id">xendfile.desktop</launchable>
-  <url type="homepage">https://github.com/lalomorales22/unidrop</url>
-  <url type="bugtracker">https://github.com/lalomorales22/unidrop/issues</url>
+  <url type="homepage">https://github.com/lalomorales22/xendfile</url>
+  <url type="bugtracker">https://github.com/lalomorales22/xendfile/issues</url>
   <provides>
     <binary>xendfile</binary>
   </provides>

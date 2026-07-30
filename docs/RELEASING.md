@@ -77,7 +77,7 @@ go run ./cmd/xendfile-release verify \
   --public release/release-public.pem \
   --manifest dist/xendfile-VERSION-manifest.json \
   --signature dist/xendfile-VERSION-manifest.sig.json
-gh attestation verify ARTIFACT --repo lalomorales22/unidrop
+gh attestation verify ARTIFACT --repo lalomorales22/xendfile
 ```
 
 Compare the manifest's `sourceCommit` with the immutable tag and retain the
