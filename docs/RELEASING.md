@@ -32,7 +32,10 @@ approval gate are complete for that version.
 1. Update `internal/version/VERSION`. The core, trays, installers, website, SBOM,
    and manifest all read this source of truth.
 2. Update the changelog/release notes, compatibility floor, security limitations,
-   third-party notices, dependency review, and platform support evidence.
+   third-party notices, dependency review, and platform support evidence. Complete
+   the owner and qualified-reviewer record in
+   [`EXPORT_COMPLIANCE.md`](EXPORT_COMPLIANCE.md) before publishing encryption
+   software or answering App Store Connect's encryption questions.
 3. Run the full local checks:
 
    ```sh
