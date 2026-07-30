@@ -37,7 +37,7 @@ jobs:
           cache: false
       - name: Validate tag and build reviewed AppImage
         env:
-          GO_CMD: ${{ env.GOROOT }}/bin/go
+          GO_CMD: go
           TARGET_ARCH: ${{ matrix.go_arch }}
         shell: bash
         run: |

@@ -64,7 +64,7 @@ jobs:
       - name: Install, upgrade, stop/start, uninstall, and reinstall smoke test
         if: runner.os != 'Windows'
         env:
-          GO_CMD: ${{ env.GOROOT }}/bin/go
+          GO_CMD: go
         run: sh scripts/smoke-install.sh
       - name: Windows install, upgrade, stop/start, uninstall, and reinstall smoke test
         if: runner.os == 'Windows'
@@ -131,7 +131,7 @@ jobs:
           cache: false
       - name: Fetch reviewed AppImage tools and build twice reproducibly
         env:
-          GO_CMD: ${{ env.GOROOT }}/bin/go
+          GO_CMD: go
           TARGET_ARCH: ${{ matrix.go_arch }}
         shell: bash
         run: |
