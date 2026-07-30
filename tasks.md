@@ -142,7 +142,9 @@ download, install, verify, update, and remove.
 - [x] Create a polished universal `.dmg` or signed `.pkg`.
 - [ ] Submit with `notarytool`, inspect the notary log, staple the ticket, and test
   Gatekeeper behavior on a clean Mac.
-- [ ] Determine and document encryption export-compliance requirements.
+- [ ] Determine and document encryption export-compliance requirements. The
+  technical inventory and release gate are in `docs/EXPORT_COMPLIANCE.md`; final
+  classification and owner/qualified-reviewer approval remain required.
 
 ### Windows
 
