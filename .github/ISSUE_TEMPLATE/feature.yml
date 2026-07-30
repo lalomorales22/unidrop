@@ -1,0 +1,30 @@
+name: Feature request
+description: Propose a focused product improvement.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Describe the user and the recurring problem before proposing an implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+    validations:
+      required: true
+  - type: dropdown
+    id: platforms
+    attributes:
+      label: Platforms affected
+      options: [All desktop platforms, macOS, Windows, Linux, Mobile, Cloud service]
+    validations:
+      required: true
+  - type: textarea
+    id: privacy
+    attributes:
+      label: Security, privacy, and compatibility considerations
+      description: Explain any new metadata, permissions, dependencies, network access, or protocol changes.

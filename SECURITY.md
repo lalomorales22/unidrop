@@ -55,4 +55,13 @@ Installers pin the official Go 1.26.5 toolchain and the SHA-256 values published
 
 ## Reporting
 
-Until a private disclosure address is established, do not post exploitable security details in a public issue. Contact the project owner directly and include the affected version, platform, reproduction steps, and impact.
+Do not post exploitable security details in a public issue. Submit a
+[private GitHub security advisory](https://github.com/lalomorales22/unidrop/security/advisories/new)
+and include the affected version, platform, reproduction steps, impact, and a
+safe way to contact you. The public project contact is the repository's
+[issue tracker](https://github.com/lalomorales22/unidrop/issues) for
+non-sensitive bugs and questions.
+
+The project aims to acknowledge private reports within three business days. That
+target is not a guarantee or a claim of continuous monitoring while UniDrop is
+maintained as alpha software.

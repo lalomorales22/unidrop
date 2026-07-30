@@ -1,12 +1,15 @@
 # UniDrop per-user installer for Windows 10/11.
 [CmdletBinding()]
-param([switch]$NoStart)
+param(
+    [switch]$NoStart,
+    [string]$InstallRoot
+)
 $ErrorActionPreference = 'Stop'
 
-$AppVersion = '0.3.3'
 $GoVersion = '1.26.5'
 $MinimumGoVersion = [version]'1.25.0'
 $ScriptDirectory = $PSScriptRoot
+$AppVersion = (Get-Content (Join-Path $ScriptDirectory 'internal\version\VERSION') -Raw).Trim()
 $TempDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("unidrop-install-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $TempDirectory | Out-Null
 
@@ -87,7 +90,19 @@ try {
         default { throw "Unsupported CPU architecture: $Machine" }
     }
 
-    $InstallDirectory = Join-Path $env:LOCALAPPDATA 'UniDrop'
+    $IsIsolatedInstall = -not [string]::IsNullOrWhiteSpace($InstallRoot)
+    if ($IsIsolatedInstall) {
+        $InstallRoot = [System.IO.Path]::GetFullPath($InstallRoot)
+        if ($InstallRoot -eq [System.IO.Path]::GetPathRoot($InstallRoot)) { throw 'Refusing an unsafe InstallRoot' }
+        $InstallDirectory = Join-Path $InstallRoot 'App'
+        $StartupDirectory = Join-Path $InstallRoot 'Startup'
+        $ProgramsDirectory = Join-Path $InstallRoot 'Programs'
+        New-Item -ItemType Directory -Force -Path $StartupDirectory, $ProgramsDirectory | Out-Null
+    } else {
+        $InstallDirectory = Join-Path $env:LOCALAPPDATA 'UniDrop'
+        $StartupDirectory = [Environment]::GetFolderPath('Startup')
+        $ProgramsDirectory = [Environment]::GetFolderPath('Programs')
+    }
     $Destination = Join-Path $InstallDirectory 'unidrop.exe'
     $TrayDestination = Join-Path $InstallDirectory 'unidrop-tray.exe'
     New-Item -ItemType Directory -Force -Path $InstallDirectory | Out-Null
@@ -95,7 +110,9 @@ try {
     $BundledTray = Join-Path $ScriptDirectory "dist\unidrop-tray-windows-$TargetArch.exe"
 
     # Stop this user's existing processes so an upgrade can replace both executables.
-    Get-Process unidrop, unidrop-tray -ErrorAction SilentlyContinue | Stop-Process -Force
+    if (-not $IsIsolatedInstall) {
+        Get-Process unidrop, unidrop-tray -ErrorAction SilentlyContinue | Stop-Process -Force
+    }
 
     if (Test-Path $Bundled) {
         Write-UniDrop "using bundled Windows/$TargetArch core"
@@ -119,17 +136,18 @@ try {
     $OpenLauncher = Join-Path $InstallDirectory 'unidrop-open.vbs'
     Remove-Item $BackgroundLauncher, $OpenLauncher -Force -ErrorAction SilentlyContinue
 
-    $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-    $PathParts = @($UserPath -split ';' | Where-Object { $_ })
-    if (-not ($PathParts | Where-Object { $_.TrimEnd('\') -ieq $InstallDirectory.TrimEnd('\') })) {
-        $NewUserPath = if ($UserPath) { "$UserPath;$InstallDirectory" } else { $InstallDirectory }
-        [Environment]::SetEnvironmentVariable('Path', $NewUserPath, 'User')
-        $env:Path = "$env:Path;$InstallDirectory"
-        Write-UniDrop 'added the UniDrop command to your user PATH (new terminals will see it)'
+    if (-not $IsIsolatedInstall) {
+        $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+        $PathParts = @($UserPath -split ';' | Where-Object { $_ })
+        if (-not ($PathParts | Where-Object { $_.TrimEnd('\') -ieq $InstallDirectory.TrimEnd('\') })) {
+            $NewUserPath = if ($UserPath) { "$UserPath;$InstallDirectory" } else { $InstallDirectory }
+            [Environment]::SetEnvironmentVariable('Path', $NewUserPath, 'User')
+            $env:Path = "$env:Path;$InstallDirectory"
+            Write-UniDrop 'added the UniDrop command to your user PATH (new terminals will see it)'
+        }
     }
 
     $Shell = New-Object -ComObject WScript.Shell
-    $StartupDirectory = [Environment]::GetFolderPath('Startup')
     $StartupShortcut = $Shell.CreateShortcut((Join-Path $StartupDirectory 'UniDrop.lnk'))
     $StartupShortcut.TargetPath = $TrayDestination
     $StartupShortcut.Arguments = ''
@@ -137,13 +155,21 @@ try {
     $StartupShortcut.Description = 'UniDrop secure local file sharing'
     $StartupShortcut.Save()
 
-    $ProgramsDirectory = [Environment]::GetFolderPath('Programs')
     $MenuShortcut = $Shell.CreateShortcut((Join-Path $ProgramsDirectory 'UniDrop.lnk'))
     $MenuShortcut.TargetPath = $TrayDestination
     $MenuShortcut.Arguments = '--open'
     $MenuShortcut.WorkingDirectory = $InstallDirectory
     $MenuShortcut.Description = 'Open UniDrop'
     $MenuShortcut.Save()
+
+    Copy-Item -Force (Join-Path $ScriptDirectory 'uninstall.ps1') (Join-Path $InstallDirectory 'uninstall.ps1')
+    $UninstallShortcut = $Shell.CreateShortcut((Join-Path $ProgramsDirectory 'Uninstall UniDrop.lnk'))
+    $UninstallShortcut.TargetPath = 'powershell.exe'
+    $UninstallShortcut.Arguments = '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $InstallDirectory 'uninstall.ps1') + '"'
+    if ($IsIsolatedInstall) { $UninstallShortcut.Arguments += ' -InstallRoot "' + $InstallRoot + '"' }
+    $UninstallShortcut.WorkingDirectory = $InstallDirectory
+    $UninstallShortcut.Description = 'Uninstall UniDrop while preserving paired-device data'
+    $UninstallShortcut.Save()
 
     Write-UniDrop "installed $Destination and $TrayDestination"
     if (-not $NoStart) {

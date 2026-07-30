@@ -1,0 +1,46 @@
+name: Bug report
+description: Report a reproducible UniDrop problem without private data.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include pairing codes, tokens, private keys, real filenames, or vulnerability details. Use a private security advisory for exploitable security issues.
+  - type: input
+    id: version
+    attributes:
+      label: UniDrop version
+      placeholder: v0.3.3
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options: [macOS, Windows, Linux, Mixed-platform transfer]
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS version, architecture, Linux desktop if applicable, and the platforms on both ends of a transfer.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted logs
+      description: Remove device IDs, IP addresses if sensitive, filenames, paths, tokens, and personal information.

@@ -118,3 +118,23 @@ Files are deliberately sent as raw request bodies rather than multipart forms. T
 5. Folder transfer through a streamed, validated archive format.
 6. Resumable chunked transfers and per-file BLAKE2/SHA-256 result verification.
 7. Optional relay/WebRTC mode for different networks, clearly separated from LAN-only mode.
+
+## Release trust path
+
+`internal/version/VERSION`, `PROTOCOL`, and `MIN_COMPATIBLE_VERSION` are embedded
+into every Go binary and read directly by installers, the website build, and
+release tooling. `scripts/build-all.sh` cross-compiles every desktop architecture,
+rebuilds both macOS menu architectures when Swift is available, and produces a
+versioned manifest, SPDX 2.3 SBOM, and `SHA256SUMS` without third-party build
+packages.
+
+The trusted tag workflow is isolated from pull requests. It requires an annotated
+immutable version tag and protected Ed25519 signing key, signs the exact manifest
+bytes, requests short-lived GitHub OIDC/Sigstore provenance and SBOM attestations,
+then publishes a new release without replacing prior assets. OS publisher signing
+and notarization are separate mandatory layers; a manifest signature does not
+make an unsigned macOS or Windows package trustworthy to the operating system.
+
+The update acceptance and key-rotation contract is documented in
+`docs/UPDATE_SECURITY.md`. Automatic update code remains disabled until all
+negative tests and clean-machine recovery checks in that document pass.

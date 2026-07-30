@@ -3,7 +3,7 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
 DIST_DIR="$SCRIPT_DIR/dist"
-VERSION=${UNIDROP_VERSION:-0.3.3}
+VERSION=${UNIDROP_VERSION:-$(tr -d '\r\n' < "$SCRIPT_DIR/internal/version/VERSION")}
 
 command -v go >/dev/null 2>&1 || { printf '%s\n' 'Go is required to build release binaries.' >&2; exit 1; }
 mkdir -p "$DIST_DIR"
@@ -49,10 +49,7 @@ if [ "$(uname -s)" = "Darwin" ] && command -v xcrun >/dev/null 2>&1 && xcrun --f
   "$SCRIPT_DIR/scripts/build-macos-menu.sh"
 fi
 
-if command -v sha256sum >/dev/null 2>&1; then
-  (cd "$DIST_DIR" && sha256sum unidrop-* > SHA256SUMS)
-else
-  (cd "$DIST_DIR" && shasum -a 256 unidrop-* > SHA256SUMS)
-fi
+command -v node >/dev/null 2>&1 || { printf '%s\n' 'Node.js is required to generate release metadata.' >&2; exit 1; }
+node "$SCRIPT_DIR/scripts/release-metadata.mjs"
 
 printf 'Release binaries written to %s\n' "$DIST_DIR"

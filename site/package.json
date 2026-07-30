@@ -1,0 +1,11 @@
+{
+  "name": "unidrop-landing-page",
+  "version": "0.0.0-private",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node dev.mjs",
+    "build": "node build.mjs",
+    "test": "npm run build && node --test tests/site.test.mjs"
+  }
+}
