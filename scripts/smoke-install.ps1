@@ -28,10 +28,17 @@ try {
         $env:UNIDROP_DOWNLOAD_DIR = $Downloads
         $Process = Start-Process -FilePath $Core -ArgumentList '--no-open' -PassThru
         $Deadline = [DateTime]::UtcNow.AddSeconds(10)
-        while (-not (Test-Path (Join-Path $UserData 'control-token')) -and [DateTime]::UtcNow -lt $Deadline) {
+        $Ready = $false
+        while ([DateTime]::UtcNow -lt $Deadline) {
+            if ($Process.HasExited) { throw "core exited before becoming ready (exit $($Process.ExitCode))" }
+            & $Core peers *> $null
+            if ($LASTEXITCODE -eq 0) {
+                $Ready = $true
+                break
+            }
             Start-Sleep -Milliseconds 100
         }
-        if (-not (Test-Path (Join-Path $UserData 'control-token'))) { throw 'core did not start' }
+        if (-not $Ready) { throw 'core did not become ready' }
         & $Core stop
         if (-not $Process.WaitForExit(10000)) { throw 'core did not stop cleanly' }
     } finally {
