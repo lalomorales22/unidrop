@@ -4,7 +4,7 @@
 
 Xendfile v0.3.3 is a source-based alpha for direct same-LAN file transfer across
 macOS, Windows, and Linux. The website currently links to the immutable reviewed
-source snapshot at commit `7f7e82be35f3f712e2342958966712156840ab05`, not to a
+source snapshot at commit `0f4295268e704cadf40f9b892e19115a672960cd`, not to a
 signed native release.
 
 ### Included
@@ -37,22 +37,25 @@ signed native release.
 Expected archive metadata:
 
 ```text
-Commit:  7f7e82be35f3f712e2342958966712156840ab05
-Bytes:   3107597
-SHA-256: f7b16974ced047a6553fc2c0ec15f5837846fd7df4a5a709594c4c91c2fbb34d
+Commit:  0f4295268e704cadf40f9b892e19115a672960cd
+Bytes:   3205035
+SHA-256: b3219892170a3d6cdc413edc6d1126588e844a1b1c5753a07e447c19f711b4d5
 ```
 
 After downloading, compare the locally computed SHA-256 before extracting it:
 
 ```sh
-shasum -a 256 xendfile-7f7e82be35f3f712e2342958966712156840ab05.zip
+shasum -a 256 unidrop-0f4295268e704cadf40f9b892e19115a672960cd.zip
 ```
 
 PowerShell:
 
 ```powershell
-Get-FileHash -Algorithm SHA256 .\xendfile-7f7e82be35f3f712e2342958966712156840ab05.zip
+Get-FileHash -Algorithm SHA256 .\unidrop-0f4295268e704cadf40f9b892e19115a672960cd.zip
 ```
+
+GitHub currently names this source archive after the unchanged repository slug,
+`unidrop`. Its contents and product identity are Xendfile.
 
 The hash proves that the bytes match the documented snapshot. It does not prove
 publisher identity because this alpha archive has no Xendfile signature.
