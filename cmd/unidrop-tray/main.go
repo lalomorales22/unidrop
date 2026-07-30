@@ -27,9 +27,10 @@ import (
 	"github.com/godbus/dbus/v5"
 	"github.com/godbus/dbus/v5/introspect"
 	"github.com/godbus/dbus/v5/prop"
+	appversion "unidrop/internal/version"
 )
 
-var appVersion = "0.3.3"
+var appVersion = appversion.Current
 
 const (
 	defaultUIURL = "http://127.0.0.1:43337/"

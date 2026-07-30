@@ -3,10 +3,10 @@
 # It installs per-user, needs no sudo, and never downloads third-party modules.
 set -eu
 
-APP_VERSION="0.3.3"
 GO_VERSION="1.26.5"
 MIN_GO_VERSION="1.25.0"
 SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
+APP_VERSION=$(tr -d '\r\n' < "$SCRIPT_DIR/internal/version/VERSION")
 TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/unidrop-install.XXXXXX")
 INSTALL_HOME=${UNIDROP_INSTALL_HOME:-$HOME}
 NO_START=${UNIDROP_NO_START:-0}

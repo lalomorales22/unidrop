@@ -8,6 +8,11 @@ The secure engine and responsive dark interface live in [`main.go`](main.go). Ea
 
 > Current release: **v0.3.3** · Protocol: **v2** · Network scope: **same local IP network**
 
+> **Maturity: alpha.** Installers are not yet signed or notarized and the
+> protocol has not received an independent review. See the [public roadmap](ROADMAP.md)
+> and [security limitations](SECURITY.md) before relying on UniDrop for sensitive
+> or regulated work.
+
 ## What's new in v0.3.3
 
 The Windows experience is now a real background desktop app instead of only a browser-launched service:
@@ -151,6 +156,24 @@ Check the installed version from a new terminal or PowerShell window:
 ```sh
 unidrop --version
 ```
+
+## Uninstall
+
+On macOS or Linux, run the uninstaller from the source or release folder:
+
+```sh
+./uninstall.sh
+```
+
+This removes the application, startup integration, and UniDrop PATH entry while
+preserving your local identity and paired-device records for a future reinstall.
+To remove those records too, use `./uninstall.sh --remove-user-data`. Received
+files are always preserved.
+
+On Windows, open **Uninstall UniDrop** from the Start menu. The default preserves
+paired-device data; run the installed `uninstall.ps1 -RemoveUserData` from
+PowerShell to remove it. Received files are always preserved. The release-grade
+MSIX Apps & Features experience remains a v0.4.0 release blocker.
 
 ## Send your first file
 

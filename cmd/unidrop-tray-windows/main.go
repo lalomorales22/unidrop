@@ -17,9 +17,11 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	appversion "unidrop/internal/version"
 )
 
-var appVersion = "0.3.3"
+var appVersion = appversion.Current
 
 const defaultUIURL = "http://127.0.0.1:43337/"
 

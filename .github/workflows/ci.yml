@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: 1.26.5
+
+jobs:
+  go:
+    name: Go (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Install reviewed Go toolchain
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Unit and integration tests
+        run: go test -mod=vendor ./...
+      - name: Race tests
+        if: runner.os != 'Windows'
+        run: go test -race -mod=vendor ./...
+      - name: Vet
+        run: go vet -mod=vendor ./...
+      - name: Formatting
+        shell: bash
+        run: |
+          files=$(find main.go main_test.go cmd internal -type f -name '*.go' -print0 | xargs -0 gofmt -l)
+          test -z "$files" || { printf '%s\n' "$files"; exit 1; }
+      - name: Parse Unix installers
+        if: runner.os != 'Windows'
+        run: sh -n install.sh uninstall.sh scripts/*.sh
+      - name: Parse Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          foreach ($script in @('install.ps1', 'uninstall.ps1', 'scripts/smoke-install.ps1')) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $script), [ref]$tokens, [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) { $errors | Format-List; exit 1 }
+          }
+      - name: Install, upgrade, stop/start, uninstall, and reinstall smoke test
+        if: runner.os != 'Windows'
+        env:
+          GO_CMD: ${{ env.GOROOT }}/bin/go
+        run: sh scripts/smoke-install.sh
+      - name: Windows install, upgrade, stop/start, uninstall, and reinstall smoke test
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/smoke-install.ps1
+
+  website:
+    name: Landing page
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Build and test dependency-free site
+        working-directory: site
+        run: npm test
+
+  release-build:
+    name: Cross-platform release build
+    runs-on: macos-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Install reviewed Go toolchain
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Build every desktop target and release metadata
+        run: ./scripts/build-all.sh
+      - name: Verify artifact hashes and metadata
+        run: node scripts/verify-release.mjs
+
+  required:
+    name: Required CI
+    if: always()
+    needs: [go, website, release-build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm all required jobs passed
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          node -e 'const n=JSON.parse(process.env.NEEDS_JSON); if(Object.values(n).some(x=>x.result!=="success")){console.error(n);process.exit(1)}'

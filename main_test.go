@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	appversion "unidrop/internal/version"
 )
 
 func TestSanitizeFilename(t *testing.T) {
@@ -47,6 +49,30 @@ func TestPairProofBindsEveryIdentityValue(t *testing.T) {
 	}
 	if proof == pairProof("abcd-1234-5678-90ef", strings.Repeat("f", 64), request) {
 		t.Fatal("proof did not bind the recipient certificate")
+	}
+}
+
+func TestOldestSupportedProtocolContract(t *testing.T) {
+	if protocolVersion != 2 || appversion.MinimumCompatibleVersion != "0.2.0" {
+		t.Fatalf("unexpected compatibility floor: protocol=%d version=%q", protocolVersion, appversion.MinimumCompatibleVersion)
+	}
+	a := testApp(t, t.TempDir(), "Compatibility Peer")
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/info", nil)
+	response := httptest.NewRecorder()
+	a.publicMux().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("v2 info route returned %d: %s", response.Code, response.Body.String())
+	}
+	var info struct {
+		Protocol                 int    `json:"protocol"`
+		Version                  string `json:"version"`
+		MinimumCompatibleVersion string `json:"minimum_compatible_version"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&info); err != nil {
+		t.Fatal(err)
+	}
+	if info.Protocol != 2 || info.Version != appversion.Current || info.MinimumCompatibleVersion != "0.2.0" {
+		t.Fatalf("unexpected public compatibility metadata: %+v", info)
 	}
 }
 

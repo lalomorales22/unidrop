@@ -36,12 +36,15 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	appversion "unidrop/internal/version"
 )
 
-var appVersion = "0.3.3"
+var appVersion = appversion.Current
+
+var protocolVersion = appversion.Protocol
 
 const (
-	protocolVersion  = 2
 	defaultUIPort    = 43337
 	defaultPeerPort  = 43338
 	discoveryAddress = "239.255.77.77:43339"
@@ -991,7 +994,8 @@ func (a *App) handlePublicInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"protocol": protocolVersion, "version": appVersion, "id": a.identity.ID,
-		"name": a.identity.Name, "os": runtime.GOOS, "fingerprint": a.fingerprint,
+		"minimum_compatible_version": appversion.MinimumCompatibleVersion,
+		"name":                       a.identity.Name, "os": runtime.GOOS, "fingerprint": a.fingerprint,
 	})
 }
 
