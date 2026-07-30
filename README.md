@@ -1,171 +1,354 @@
 # UniDrop
 
-UniDrop is a working cross-platform local file sender for macOS, Linux, and Windows. It discovers nearby computers, pairs them with a one-time key, and streams files directly over a TLS 1.3 connection. There is no cloud upload and no account.
+**Private, secure, cross-platform file sharing for the computers around you.**
 
-The secure engine and responsive interface are intentionally contained in [`main.go`](main.go). macOS adds a tiny AppKit/WebKit menu-bar shell, Linux adds a pure-Go StatusNotifier/AppIndicator shell, and Windows adds a pure-Go Win32 notification-area shell. UniDrop uses no third-party runtime, npm tree, Electron bundle, database, or system package installed with sudo.
+UniDrop is a universal local-network file sender for macOS, Linux, and Windows. It automatically discovers nearby UniDrop computers, pairs them with a one-time key, and streams files directly between them over TLS 1.3. There is no cloud upload, account, subscription, tracking service, or internet relay.
 
-## What works in v0.3.3
+The secure engine and responsive dark interface live in [`main.go`](main.go). Each operating system adds a small native shell: an AppKit/WebKit menu-bar app on macOS, a StatusNotifier/AppIndicator tray on Linux, and a Win32 notification-area companion on Windows. UniDrop does not use Electron, npm, a database, or an administrator-level background service.
 
-- macOS, Linux, and Windows secure core binaries from one source file
-- automatic peer discovery on the same LAN using local multicast
-- interface-aware discovery across active Wi-Fi, Ethernet, and virtual adapters
-- native macOS menu-bar icon that stays running and opens a compact popover
-- native Linux AppIndicator/StatusNotifier tray icon with a live status menu
-- nearby, pending-approval, reconnecting, and attention states in the Linux tray
-- Linux tray controls for opening UniDrop, receive mode, received files, and Quit
-- native Windows notification-area icon with the same live status and receive controls
-- Windows single-instance startup, Explorer-restart recovery, and incoming-request balloons
-- Bonjour-assisted Mac-to-Mac discovery plus resilient multicast retry
-- nearby-device and pending-approval count in the menu bar
-- compact nearly-black UI designed for the menu-bar popover
-- explicit **Pair** action; IP entry is now an expandable fallback
-- manual IP address fallback when a network blocks multicast
-- persistent manual peers with automatic direct health checks
-- mutual pairing with a 64-bit one-time key
-- TLS 1.3, certificate pinning, 256-bit bearer tokens, and pairing rate limits
-- receiver approval cards showing sender, filename, and size before any file bytes are accepted
-- three receive modes: **Ask every time**, **Trusted devices**, and **Receiving off**
-- a local command bridge: `unidrop send photo.jpg minibrain.local`
-- friendly `.local` aliases derived from nearby UniDrop device names
-- multiple-file drag and drop with browser upload progress
-- streamed transfers instead of loading whole files into memory
+> Current release: **v0.3.3** · Protocol: **v2** · Network scope: **same local IP network**
+
+## What's new in v0.3.3
+
+The Windows experience is now a real background desktop app instead of only a browser-launched service:
+
+- native Windows notification-area icon built directly on `Shell_NotifyIconW`
+- left-click to open UniDrop and right-click for status and receive controls
+- live nearby-device, pending-approval, reconnecting, and attention icon states
+- incoming file-request balloons that open the approval panel when clicked
+- **Ask before receiving**, **Auto-accept paired devices**, and **Receiving paused** controls
+- one-click access to received files and a clean **Quit UniDrop** action
+- automatic secure-core startup and recovery if the core temporarily stops
+- single-instance protection and automatic icon restoration after Explorer restarts
+- console-free Windows startup while keeping `unidrop peers` and `unidrop send` usable in PowerShell
+- x64 and ARM64 Windows builds from the release builder
+- Windows tray and core logs under `%APPDATA%\UniDrop`
+- upgrade-safe Windows installer that replaces older launchers and restarts both components
+
+v0.3.3 also retains the resilient discovery work from v0.3.1: UniDrop advertises on active LAN interfaces, retries multicast when interfaces change, keeps manually entered peers, and performs direct health checks when multicast is unavailable.
+
+## Highlights
+
+- secure core binaries for macOS, Linux, and Windows from one Go source
+- automatic discovery on the same LAN over Wi-Fi or Ethernet
+- native menu-bar or tray integration on all three operating systems
+- compact, nearly-black interface designed to fit a menu-bar popover
+- explicit first-time pairing with a random 64-bit one-time key
+- receiver approval cards showing sender, filename, and size before file bytes are sent
+- persistent trusted-device relationships with certificate pinning
+- TLS 1.3 transport and random 256-bit bearer tokens
+- **Ask every time**, **Trusted devices**, and **Receiving off** modes
+- multiple-file drag and drop with upload progress
+- streamed transfers that do not load an entire file into memory
+- command-line sending such as `unidrop send photo.jpg minibrain.local`
+- persistent manual-address fallback for multicast-blocked networks
 - safe filenames, unique receive names, partial-file cleanup, and a 20 GiB per-file limit
-- received files in `Downloads/UniDrop`
-- per-user startup integration and application shortcuts
-- no administrator/root requirement
+- files saved to `Downloads/UniDrop`
+- per-user installation, startup, and configuration; no root or administrator access required
+
+## Requirements
+
+- two or more computers running UniDrop on the same local IP network
+- macOS 13 or newer, a modern Linux desktop, or Windows 10/11
+- an x86-64/AMD64 or ARM64 processor
+- permission for local/private network communication when the operating system asks
+
+Guest Wi-Fi, client isolation, some corporate networks, VPNs, and strict firewalls can prevent automatic discovery even when internet access works. The manual-address fallback still works when the computers can directly reach one another.
 
 ## Install
 
-Clone UniDrop, then run the installer:
+Clone the public repository on each computer:
 
 ```sh
 git clone https://github.com/lalomorales22/unidrop.git
 cd unidrop
 ```
 
-On macOS or Linux:
+### macOS
 
 ```sh
 chmod +x install.sh
 ./install.sh
 ```
 
-On Windows, `install.sh` delegates to PowerShell when launched from Git Bash/MSYS. You can also right-click `install.ps1`, choose **Run with PowerShell**, or run:
+The installer creates `~/Applications/UniDrop.app`, a per-user LaunchAgent, and the `unidrop` terminal command. UniDrop starts in the menu bar without a Dock icon. On first launch, choose **Allow** when macOS requests Local Network access.
+
+### Linux
+
+```sh
+chmod +x install.sh
+./install.sh
+```
+
+The installer creates the core, the native tray companion, an application-menu entry, and systemd user services when systemd is available. Otherwise it installs XDG autostart entries. No `sudo` is required.
+
+The indicator appears automatically on desktops with a StatusNotifier/AppIndicator host. If the desktop does not provide one, UniDrop still runs and can be opened from the application menu or at [http://127.0.0.1:43337](http://127.0.0.1:43337).
+
+### Windows 10/11
+
+Open PowerShell in the cloned `unidrop` folder and run:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 .\install.ps1
 ```
 
-If a compatible Go release is already installed, the installer uses it. Otherwise it downloads the official Go 1.26.5 toolchain from `go.dev` into a temporary directory, verifies its pinned SHA-256 checksum, builds UniDrop, then deletes that temporary toolchain. The installed application itself has no runtime dependencies. Linux tray source dependencies are reviewed, pinned, and checked into `vendor/`, so installation never fetches a third-party module.
+You can also run `./install.sh` from Git Bash/MSYS; it delegates to PowerShell. The installer creates:
 
-Go 1.26.5 is intentionally pinned because it is the current July 2026 security release and includes the latest fixes in `crypto/tls` and `os`. See the [Go release history](https://go.dev/doc/devel/release) and [Go vulnerability database](https://pkg.go.dev/vuln/).
+- `%LOCALAPPDATA%\UniDrop\unidrop.exe` — secure core and command-line client
+- `%LOCALAPPDATA%\UniDrop\unidrop-tray.exe` — native GUI tray companion
+- a per-user Startup shortcut
+- a Start-menu shortcut
+- a user PATH entry for the `unidrop` command
 
-The macOS installer includes a SHA-256-pinned universal menu-bar binary built from the checked-in Swift source, so Xcode is not required. If that binary is intentionally omitted, the installer can rebuild it with Apple’s Swift compiler. Linux builds its small tray companion from vendored source. Windows builds its Win32 companion entirely from the standard library. No third-party package is downloaded during installation.
+Windows may ask once whether UniDrop may communicate on private networks. Allow **Private networks** so nearby computers can connect. The tray icon may initially be inside the notification area's `^` overflow menu; it can be dragged onto the visible taskbar area.
 
-## Use
+### Install without starting immediately
 
-1. Open UniDrop on both computers. On macOS, click the ⇅ menu-bar icon. On Linux or Windows, click the UniDrop notification-area icon. The full panel remains available at [http://127.0.0.1:43337](http://127.0.0.1:43337).
-2. UniDrop searches automatically. Choose the nearby device that appears.
-3. Copy the one-time pairing key shown by the receiver, paste it on the sender, and press **Pair**.
-4. Drop one or more files and press **Send**.
-5. The receiver reviews the filename, size, and paired sender, then presses **Accept** or **Decline**.
-6. Accepted files appear in `Downloads/UniDrop`.
+On macOS or Linux:
 
-The first macOS launch asks for Local Network access. Choose **Allow** so automatic discovery can see nearby Macs. UniDrop now retries discovery after the decision instead of silently giving up. If a managed, guest, or multicast-blocked network still hides peers, expand **Connect by address instead** and enter the address displayed by the other computer.
+```sh
+UNIDROP_NO_START=1 ./install.sh
+```
 
-### Send from the command line
+On Windows:
 
-The installer adds the `unidrop` command to your user PATH. Open a new terminal after the first install so the shell sees it.
+```powershell
+.\install.ps1 -NoStart
+```
 
-List nearby devices and their command names:
+Startup integration is still installed; only the immediate launch is skipped.
+
+### What the installer downloads
+
+If Go 1.25 or newer is already installed, UniDrop builds with it. Otherwise the installer downloads the official Go 1.26.5 toolchain from `go.dev` into a temporary directory, verifies the pinned SHA-256 checksum, builds UniDrop, and deletes the temporary toolchain.
+
+The installed app has no runtime dependencies. Linux's two small D-Bus source dependencies are reviewed, pinned, and checked into `vendor/`, so installation does not fetch third-party modules. The Windows companion uses only Go's standard library and Win32 system APIs. See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) and [`SECURITY.md`](SECURITY.md).
+
+The macOS source checkout includes a SHA-256-pinned universal menu-bar binary, so Xcode is not normally required. If that portable shell is intentionally omitted, the installer can use a bundled release artifact or rebuild it with Apple's Swift compiler.
+
+## Update an existing installation
+
+Pull the newest source and run the installer again:
+
+```sh
+git pull --ff-only
+./install.sh
+```
+
+On Windows:
+
+```powershell
+git pull --ff-only
+Set-ExecutionPolicy -Scope Process Bypass
+.\install.ps1
+```
+
+The installer preserves UniDrop's configuration and paired-device state, replaces the application binaries, refreshes startup integration, and restarts the installed components. Upgrade both computers together when the protocol version changes.
+
+Check the installed version from a new terminal or PowerShell window:
+
+```sh
+unidrop --version
+```
+
+## Send your first file
+
+1. Install and open UniDrop on both computers.
+2. Wait for the other computer to appear under **Nearby devices**.
+3. Select it. The receiving computer displays a one-time pairing key.
+4. Enter that key on the sending computer and choose **Pair**.
+5. Drag one or more files into UniDrop, or choose them with the file picker.
+6. Press **Send**.
+7. With the default receive mode, the receiver checks the sender, filename, and size, then chooses **Accept** or **Decline**.
+8. Accepted files appear in `Downloads/UniDrop`.
+
+Pairing is mutual. After pairing once, either computer can send to the other whenever both are online. Reinstalling in place preserves pairing; deleting UniDrop's configuration or installing as another user creates a new identity and requires pairing again.
+
+## Menu-bar and tray controls
+
+| Platform | Open UniDrop | Background controls |
+|---|---|---|
+| macOS | Click the ⇅ menu-bar icon | Compact popover, nearby/pending count, receive settings, received files, full panel, Quit |
+| Linux | Click the UniDrop indicator or use the application menu | Live status, receive mode, received files, Open, Quit |
+| Windows | Left-click the UniDrop notification icon or open UniDrop from Start | Right-click for live status, receive mode, received files, Open, Quit |
+
+The full local control panel is always available at [http://127.0.0.1:43337](http://127.0.0.1:43337). It is bound to loopback and is not exposed to other computers.
+
+### Receive modes
+
+- **Ask every time** is the safe default. Every incoming file creates an approval card.
+- **Trusted devices** automatically accepts new offers from devices you already paired with.
+- **Receiving off** declines new offers until receiving is enabled again.
+
+Use **Receiving off** when you want UniDrop available for sending but do not want to receive anything. Use **Quit UniDrop** or `unidrop stop` when you want the entire service turned off.
+
+## Command line
+
+Open a new terminal after the first installation so the updated user PATH is available.
+
+List online UniDrop devices and their command names:
 
 ```sh
 unidrop peers
 ```
 
-Stop the current user's background service cleanly:
-
-```sh
-unidrop stop
-```
-
-Send a file using the nearby computer's UniDrop name:
+Send one file:
 
 ```sh
 unidrop send /path/to/photo.jpg minibrain.local
 ```
 
-Send several files, especially when the device name contains spaces:
+Send several files, or target a name containing spaces:
 
 ```sh
 unidrop send --to mini-brain.local photo.jpg notes.pdf
 ```
 
-The background UniDrop service must be running and the devices must already be paired. The `.local` value is a friendly UniDrop discovery alias, so it works even when the operating system has not registered that exact mDNS hostname. A real hostname or `host:port` is also accepted as a fallback. The command waits for the receiver's decision and reports a clear declined, expired, or completed result.
-
-Incoming behavior is controlled from the receiver panel:
-
-- **Ask every time** is the safe default and displays an approval card.
-- **Trusted devices** automatically accepts files from already-paired machines.
-- **Receiving off** declines new offers until receiving is enabled again.
-
-## Platform behavior
-
-| Platform | Startup and app access | Received files | Current native shell integration |
-|---|---|---|---|
-| macOS | `~/Applications/UniDrop.app` plus a LaunchAgent | `~/Downloads/UniDrop` | Native menu-bar popover, Bonjour discovery, count badge, compact UI, notifications |
-| Linux | application-menu entry plus systemd user services or XDG autostart | `~/Downloads/UniDrop` | Native StatusNotifier/AppIndicator tray, live menu, generated state icon, notifications, browser panel on click |
-| Windows | Start-menu and Startup shortcuts; command added to user PATH | `%USERPROFILE%\Downloads\UniDrop` | Native Win32 notification-area icon, live menu, generated state icon, request balloons, browser panel on click |
-
-The Linux tray speaks the [Freedesktop StatusNotifierItem protocol](https://specifications.freedesktop.org/status-notifier-item/latest-single/) directly over the user's D-Bus session. It appears on desktops with a StatusNotifier/AppIndicator host. On desktops without one, UniDrop keeps running securely and remains available from the application menu or browser URL. No legacy tray library is installed automatically.
-
-If the Linux icon is missing, verify the companion and inspect its desktop-session log:
+Stop the background core and native shell:
 
 ```sh
-systemctl --user status unidrop-tray.service
-journalctl --user -u unidrop-tray.service -n 30 --no-pager
+unidrop stop
 ```
 
-A healthy companion logs either `tray registered` or the explicit `no StatusNotifier host found` fallback message.
+Start UniDrop again and open its panel:
 
-The Windows companion uses the operating system's `Shell_NotifyIconW` notification-area API directly. Left-click opens UniDrop; right-click shows status, receive modes, received files, and Quit. It writes diagnostics to `%APPDATA%\UniDrop\tray.log` and automatically restores its icon when Windows Explorer restarts.
+```sh
+unidrop --open
+```
 
-If the Windows icon is missing, inspect the installed processes and companion log from PowerShell:
+The sending computer must have its background service running, and the destination must already be paired. The friendly `.local` command name is derived from UniDrop discovery and does not require the operating system to register the same mDNS hostname. A displayed IP address, real hostname, or `host:port` can also be used.
+
+Only regular files are accepted by the command bridge. Folder transfer is on the roadmap.
+
+## Automatic discovery and manual connection
+
+UniDrop advertises a small device record over local UDP multicast and listens on each active IPv4 LAN interface. Macs also publish and browse `_unidrop._tcp` through Bonjour. Discovery retries when interfaces appear or change, and manually added computers are health-checked directly.
+
+If a computer does not appear automatically:
+
+1. Confirm both devices are on the same normal LAN, not separate guest networks.
+2. Temporarily disconnect VPNs or confirm the VPN permits local-LAN access.
+3. Allow UniDrop through the local/private-network firewall.
+4. Keep UniDrop open for several seconds after Wi-Fi connects.
+5. Expand **Connect by address instead**.
+6. Enter the address displayed by the other computer, normally `192.168.x.x:43338`.
+7. Select the peer when it appears, pair once, and send normally.
+
+Manual addresses are saved and rechecked. A peer can briefly disappear while unreachable, changing networks, asleep, or blocked by a firewall; it returns automatically after a successful health check.
+
+## Troubleshooting
+
+### Common checks
+
+```sh
+unidrop --version
+unidrop peers
+```
+
+Confirm that TCP port `43338` and UDP port `43339` are allowed on the local/private network. Do not expose the peer port directly to the public internet.
+
+### macOS
+
+- Open **System Settings → Privacy & Security → Local Network** and enable UniDrop.
+- Quit and reopen `~/Applications/UniDrop.app` after changing Local Network permission.
+- Inspect the service log:
+
+```sh
+tail -n 50 ~/Library/Logs/UniDrop.log
+```
+
+### Linux
+
+Check both per-user services:
+
+```sh
+systemctl --user status unidrop.service unidrop-tray.service --no-pager
+journalctl --user -u unidrop.service -n 50 --no-pager
+journalctl --user -u unidrop-tray.service -n 50 --no-pager
+```
+
+A healthy tray logs `tray registered`. If it logs `no StatusNotifier host found`, the desktop does not currently expose an AppIndicator host; use the application-menu or browser panel while the secure core continues running.
+
+### Windows
+
+Check the installed processes and logs from PowerShell:
 
 ```powershell
 Get-Process unidrop, unidrop-tray -ErrorAction SilentlyContinue
-Get-Content "$env:APPDATA\UniDrop\tray.log" -Tail 30
-Get-Content "$env:APPDATA\UniDrop\core.log" -Tail 30
+Get-Content "$env:APPDATA\UniDrop\tray.log" -Tail 50
+Get-Content "$env:APPDATA\UniDrop\core.log" -Tail 50
 ```
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the OS breakdown, [SECURITY.md](SECURITY.md) for the threat model, and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the two vendored Linux tray modules.
+If the process is running but the icon is missing, open the `^` notification overflow area. The companion restores its icon automatically after Explorer restarts. To launch it manually:
+
+```powershell
+Start-Process "$env:LOCALAPPDATA\UniDrop\unidrop-tray.exe"
+```
+
+If Windows Firewall denied the original prompt, allow `unidrop.exe` on private networks in **Windows Security → Firewall & network protection → Allow an app through firewall**.
+
+## Platform locations
+
+| Platform | Application | Configuration and identity | Received files | Startup |
+|---|---|---|---|---|
+| macOS | `~/Applications/UniDrop.app` | `~/Library/Application Support/UniDrop` | `~/Downloads/UniDrop` | `~/Library/LaunchAgents/com.unidrop.app.plist` |
+| Linux | `~/.local/bin/unidrop` and `unidrop-tray` | `${XDG_CONFIG_HOME:-~/.config}/UniDrop` | `~/Downloads/UniDrop` | systemd user units or XDG autostart |
+| Windows | `%LOCALAPPDATA%\UniDrop` | `%APPDATA%\UniDrop` | `%USERPROFILE%\Downloads\UniDrop` | per-user Startup shortcut |
+
+Back up the configuration directory if you want to preserve the device identity and pairing relationships across a manual migration.
+
+## Security model
+
+- Each installation creates an ECDSA P-256 certificate and a random device identity.
+- Pairing binds both device identities and certificate fingerprints with an HMAC proof.
+- Later transfers require pinned TLS 1.3 and a device-specific 256-bit token.
+- Pair attempts are rate-limited, and the one-time key rotates after successful pairing.
+- Every file is offered with an exact sanitized filename and byte count before upload.
+- File bytes are streamed only after approval and are written to a temporary partial file first.
+- Control-panel and command-bridge mutation routes are loopback-only and require private tokens.
+- UniDrop does not open router ports, invoke UPnP, or send file contents to a third party.
+
+Read [`SECURITY.md`](SECURITY.md) for the threat model and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the protocol and operating-system design.
+
+## Network ports
+
+| Port | Purpose | Exposure |
+|---|---|---|
+| `127.0.0.1:43337/tcp` | local browser control panel and authenticated command bridge | loopback only |
+| `0.0.0.0:43338/tcp` | TLS 1.3 peer API | local LAN |
+| `239.255.77.77:43339/udp` | multicast discovery | local LAN multicast |
+
+UniDrop currently works between devices on the same reachable IP network. Cross-internet relay, Bluetooth bootstrap, and Wi-Fi Direct are not implemented.
 
 ## Develop
 
-Go 1.25 or newer is required; use the current patched release for production builds.
+Go 1.25 or newer is required. Use a current patched Go release for production builds.
 
 ```sh
-go test -race ./...
-go vet ./...
+go test -race -mod=vendor ./...
+go vet -mod=vendor ./...
 go run .
 ```
 
-Build all release targets:
+Build all macOS, Linux, and Windows release targets:
 
 ```sh
 ./scripts/build-all.sh
 ```
 
-Generated binaries go into `dist/` and are intentionally ignored by Git. Put them next to the installers for an offline installation; otherwise the installer builds from source.
-The release builder also writes `dist/SHA256SUMS`, which both installers verify when bundled binaries are present.
+Generated binaries go into `dist/` and are intentionally ignored by Git. The release builder creates AMD64 and ARM64 core binaries, Linux and Windows tray companions, macOS menu shells, and `dist/SHA256SUMS`. Both installers verify bundled binaries against that manifest when release artifacts are present.
 
-## Network ports
+## Current limitations and roadmap
 
-- `127.0.0.1:43337/tcp`: browser control panel; loopback only
-- `0.0.0.0:43338/tcp`: TLS 1.3 peer API
-- `239.255.77.77:43339/udp`: local multicast discovery
+- same-LAN transfers only; no internet relay
+- files only; folder transfer is not implemented yet
+- no Finder, Explorer, Nautilus, Dolphin, or Thunar right-click extension yet
+- UniDrop is not yet distributed as developer-signed/notarized release packages
+- protocol v2 is shared by UniDrop v0.2 through v0.3.3; v0.1 peers are intentionally ignored
 
-UniDrop is currently for devices on the same local IP network. It does not open router ports, use UPnP, or provide an internet relay.
+Planned work includes native **Send with UniDrop** file-manager actions, signed installers, QR/PAKE pairing, streamed folder transfer, resumable chunks with final hashes, and an optional clearly separated cross-network mode.
 
-Protocol v2 is used by UniDrop v0.2 through v0.3.3. Upgrade both computers together; v0.1 peers are intentionally ignored because v0.1 did not negotiate receiver approval before sending bytes.
+## Feedback and contributing
+
+Issues, testing notes, and contributions are welcome at [github.com/lalomorales22/unidrop](https://github.com/lalomorales22/unidrop). When reporting discovery or tray problems, include the operating system, desktop environment, UniDrop version, whether the devices share the same subnet, and the relevant platform log excerpt.
