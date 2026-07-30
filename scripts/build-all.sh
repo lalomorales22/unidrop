@@ -3,7 +3,7 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
 DIST_DIR="$SCRIPT_DIR/dist"
-VERSION=${UNIDROP_VERSION:-0.1.0}
+VERSION=${UNIDROP_VERSION:-0.2.0}
 
 command -v go >/dev/null 2>&1 || { printf '%s\n' 'Go is required to build release binaries.' >&2; exit 1; }
 mkdir -p "$DIST_DIR"
@@ -14,12 +14,8 @@ build() {
   suffix=$3
   output="$DIST_DIR/unidrop-$target_os-$target_arch$suffix"
   printf 'Building %s/%s...\n' "$target_os" "$target_arch"
-  extra_flags=''
-  if [ "$target_os" = "windows" ]; then
-    extra_flags='-H=windowsgui'
-  fi
   (cd "$SCRIPT_DIR" && CGO_ENABLED=0 GOOS="$target_os" GOARCH="$target_arch" go build \
-    -trimpath -ldflags="-s -w $extra_flags -X main.appVersion=$VERSION" -o "$output" .)
+    -trimpath -ldflags="-s -w -X main.appVersion=$VERSION" -o "$output" .)
 }
 
 build darwin amd64 ''

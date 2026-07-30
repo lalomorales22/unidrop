@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -29,6 +30,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,16 +38,24 @@ import (
 	"time"
 )
 
-var appVersion = "0.1.0"
+var appVersion = "0.2.0"
 
 const (
-	protocolVersion  = 1
+	protocolVersion  = 2
 	defaultUIPort    = 43337
 	defaultPeerPort  = 43338
 	discoveryAddress = "239.255.77.77:43339"
 	maxRecent        = 60
 	defaultMaxBytes  = int64(20 << 30) // 20 GiB
 	peerLifetime     = 15 * time.Second
+	offerLifetime    = 2 * time.Minute
+	maxPendingOffers = 100
+)
+
+const (
+	receiveModeAsk     = "ask"
+	receiveModeTrusted = "trusted"
+	receiveModeOff     = "off"
 )
 
 type Identity struct {
@@ -66,6 +76,7 @@ type savedState struct {
 	Identity    Identity                `json:"identity"`
 	DownloadDir string                  `json:"download_dir"`
 	Trusted     map[string]*TrustedPeer `json:"trusted_peers"`
+	ReceiveMode string                  `json:"receive_mode"`
 }
 
 type discoveryPacket struct {
@@ -108,6 +119,38 @@ type Transfer struct {
 	Finished  string `json:"finished,omitempty"`
 }
 
+type IncomingOffer struct {
+	ID         string `json:"id"`
+	SenderID   string `json:"-"`
+	SenderName string `json:"sender_name"`
+	File       string `json:"file"`
+	Bytes      int64  `json:"bytes"`
+	Status     string `json:"status"`
+	Created    string `json:"created"`
+	Expires    string `json:"expires"`
+}
+
+type offerRequest struct {
+	File  string `json:"file"`
+	Bytes int64  `json:"bytes"`
+}
+
+type offerResponse struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+}
+
+type cliSendRequest struct {
+	Target string   `json:"target"`
+	Paths  []string `json:"paths"`
+}
+
+type cliSendResult struct {
+	Target string   `json:"target"`
+	Files  []string `json:"files"`
+	Bytes  int64    `json:"bytes"`
+}
+
 type attemptWindow struct {
 	Start time.Time
 	Count int
@@ -119,6 +162,7 @@ type App struct {
 	trusted      map[string]*TrustedPeer
 	discovered   map[string]*DiscoveredPeer
 	transfers    []*Transfer
+	offers       map[string]*IncomingOffer
 	attempts     map[string]*attemptWindow
 	configDir    string
 	downloadDir  string
@@ -126,6 +170,8 @@ type App struct {
 	cert         tls.Certificate
 	fingerprint  string
 	pairingCode  string
+	controlToken string
+	receiveMode  string
 	peerPort     int
 	uiAddress    string
 	maxBytes     int64
@@ -152,6 +198,14 @@ type pairResponse struct {
 }
 
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "send":
+			os.Exit(runSendCLI(os.Args[2:]))
+		case "peers":
+			os.Exit(runPeersCLI())
+		}
+	}
 	listenAddress := flag.String("listen", fmt.Sprintf(":%d", defaultPeerPort), "LAN HTTPS listen address")
 	uiAddress := flag.String("ui", fmt.Sprintf("127.0.0.1:%d", defaultUIPort), "local control-panel address")
 	noOpen := flag.Bool("no-open", false, "do not open the control panel at startup")
@@ -205,14 +259,165 @@ func main() {
 	_ = app.publicServer.Shutdown(shutdown)
 }
 
-func newApp(uiAddress string) (*App, error) {
-	configBase, err := os.UserConfigDir()
+func runSendCLI(args []string) int {
+	target, paths, err := parseSendArguments(args)
 	if err != nil {
-		return nil, fmt.Errorf("find config directory: %w", err)
+		fmt.Fprintln(os.Stderr, "UniDrop:", err)
+		fmt.Fprintln(os.Stderr, "Usage: unidrop send <file> [file...] <device-name.local>")
+		fmt.Fprintln(os.Stderr, "   or: unidrop send --to <device> <file> [file...]")
+		return 2
 	}
-	configDir := filepath.Join(configBase, "UniDrop")
-	if override := strings.TrimSpace(os.Getenv("UNIDROP_CONFIG_DIR")); override != "" {
-		configDir = override
+	total := int64(0)
+	for index, path := range paths {
+		absolute, err := filepath.Abs(path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "UniDrop: resolve %s: %v\n", path, err)
+			return 1
+		}
+		info, err := os.Stat(absolute)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "UniDrop: inspect %s: %v\n", path, err)
+			return 1
+		}
+		if !info.Mode().IsRegular() {
+			fmt.Fprintf(os.Stderr, "UniDrop: %s is not a regular file (folder sending is coming next)\n", path)
+			return 1
+		}
+		total += info.Size()
+		paths[index] = absolute
+	}
+	request := cliSendRequest{Target: target, Paths: paths}
+	body, _ := json.Marshal(request)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+	fmt.Printf("UniDrop: asking %s to accept %d file(s), %s total...\n", target, len(paths), humanBytes(total))
+	response, err := localControlRequest(ctx, http.MethodPost, "/api/cli/send", body)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "UniDrop:", err)
+		return 1
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusCreated {
+		fmt.Fprintln(os.Stderr, "UniDrop:", responseError(response))
+		return 1
+	}
+	var result cliSendResult
+	if err := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&result); err != nil {
+		fmt.Fprintln(os.Stderr, "UniDrop: invalid local service response:", err)
+		return 1
+	}
+	fmt.Printf("UniDrop: sent %d file(s) to %s (%s).\n", len(result.Files), result.Target, humanBytes(result.Bytes))
+	return 0
+}
+
+func runPeersCLI() int {
+	response, err := localControlRequest(context.Background(), http.MethodGet, "/api/cli/peers", nil)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "UniDrop:", err)
+		return 1
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		fmt.Fprintln(os.Stderr, "UniDrop:", responseError(response))
+		return 1
+	}
+	var peers []peerView
+	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&peers); err != nil {
+		fmt.Fprintln(os.Stderr, "UniDrop: invalid local service response:", err)
+		return 1
+	}
+	sort.Slice(peers, func(i, j int) bool { return strings.ToLower(peers[i].Name) < strings.ToLower(peers[j].Name) })
+	found := 0
+	for _, peer := range peers {
+		if !peer.Online {
+			continue
+		}
+		state := "pair first"
+		if peer.Trusted {
+			state = "ready"
+		}
+		fmt.Printf("%-28s %-10s %s\n", cliDeviceName(peer.Name), state, peer.Address)
+		found++
+	}
+	if found == 0 {
+		fmt.Println("No UniDrop devices are currently visible.")
+	}
+	return 0
+}
+
+func parseSendArguments(args []string) (string, []string, error) {
+	if len(args) >= 3 && args[0] == "--to" {
+		target := strings.TrimSpace(args[1])
+		if target == "" {
+			return "", nil, errors.New("device name is required")
+		}
+		return target, append([]string(nil), args[2:]...), nil
+	}
+	if len(args) < 2 {
+		return "", nil, errors.New("at least one file and a destination device are required")
+	}
+	target := strings.TrimSpace(args[len(args)-1])
+	if target == "" {
+		return "", nil, errors.New("device name is required")
+	}
+	return target, append([]string(nil), args[:len(args)-1]...), nil
+}
+
+func localControlRequest(ctx context.Context, method, path string, body []byte) (*http.Response, error) {
+	configDir, err := configDirectory()
+	if err != nil {
+		return nil, err
+	}
+	tokenBytes, err := os.ReadFile(filepath.Join(configDir, "control-token"))
+	if err != nil {
+		return nil, errors.New("the UniDrop service is not initialized; open UniDrop once and try again")
+	}
+	token := strings.TrimSpace(string(tokenBytes))
+	if len(token) != 64 {
+		return nil, errors.New("the local UniDrop control token is invalid")
+	}
+	base := strings.TrimSpace(os.Getenv("UNIDROP_UI_URL"))
+	if base == "" {
+		base = fmt.Sprintf("http://127.0.0.1:%d", defaultUIPort)
+	}
+	parsed, err := url.Parse(base)
+	if err != nil || parsed.Scheme != "http" || (parsed.Hostname() != "127.0.0.1" && parsed.Hostname() != "localhost" && parsed.Hostname() != "::1") {
+		return nil, errors.New("UNIDROP_UI_URL must be an HTTP loopback address")
+	}
+	request, err := http.NewRequestWithContext(ctx, method, strings.TrimSuffix(base, "/")+path, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	if body != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	response, err := (&http.Client{}).Do(request)
+	if err != nil {
+		return nil, errors.New("the UniDrop background service is not running")
+	}
+	return response, nil
+}
+
+func cliDeviceName(name string) string {
+	name = normalizeDeviceTarget(name)
+	name = strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			return r
+		}
+		return -1
+	}, name)
+	name = strings.Trim(name, "-")
+	if name == "" {
+		return "unknown.local"
+	}
+	return name + ".local"
+}
+
+func newApp(uiAddress string) (*App, error) {
+	configDir, err := configDirectory()
+	if err != nil {
+		return nil, err
 	}
 	if err := os.MkdirAll(configDir, 0700); err != nil {
 		return nil, fmt.Errorf("create config directory: %w", err)
@@ -224,6 +429,7 @@ func newApp(uiAddress string) (*App, error) {
 	a := &App{
 		trusted:     make(map[string]*TrustedPeer),
 		discovered:  make(map[string]*DiscoveredPeer),
+		offers:      make(map[string]*IncomingOffer),
 		attempts:    make(map[string]*attemptWindow),
 		configDir:   configDir,
 		downloadDir: filepath.Join(home, "Downloads", "UniDrop"),
@@ -247,6 +453,9 @@ func newApp(uiAddress string) (*App, error) {
 		}
 		a.identity.Name = cleanDisplayName(host)
 	}
+	if !validReceiveMode(a.receiveMode) {
+		a.receiveMode = receiveModeAsk
+	}
 	if err := os.MkdirAll(a.downloadDir, 0700); err != nil {
 		return nil, fmt.Errorf("create download directory: %w", err)
 	}
@@ -257,10 +466,70 @@ func newApp(uiAddress string) (*App, error) {
 	a.cert = cert
 	a.fingerprint = fingerprint
 	a.pairingCode = randomCode()
+	a.controlToken, err = loadOrCreateControlToken(configDir)
+	if err != nil {
+		return nil, err
+	}
 	if err := a.saveState(); err != nil {
 		return nil, err
 	}
 	return a, nil
+}
+
+func configDirectory() (string, error) {
+	configBase, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("find config directory: %w", err)
+	}
+	configDir := filepath.Join(configBase, "UniDrop")
+	if override := strings.TrimSpace(os.Getenv("UNIDROP_CONFIG_DIR")); override != "" {
+		configDir = override
+	}
+	return configDir, nil
+}
+
+func loadOrCreateControlToken(dir string) (string, error) {
+	path := filepath.Join(dir, "control-token")
+	readToken := func() (string, error) {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return "", err
+		}
+		token := strings.TrimSpace(string(data))
+		if len(token) != 64 {
+			return "", errors.New("invalid local control token")
+		}
+		if _, err := hex.DecodeString(token); err != nil {
+			return "", errors.New("invalid local control token")
+		}
+		_ = os.Chmod(path, 0600)
+		return token, nil
+	}
+	if token, err := readToken(); err == nil {
+		return token, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("read local control token: %w", err)
+	}
+	token := randomHex(32)
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if errors.Is(err, os.ErrExist) {
+		return readToken()
+	}
+	if err != nil {
+		return "", fmt.Errorf("create local control token: %w", err)
+	}
+	if _, err := io.WriteString(file, token+"\n"); err != nil {
+		_ = file.Close()
+		return "", err
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return "", err
+	}
+	if err := file.Close(); err != nil {
+		return "", err
+	}
+	return token, nil
 }
 
 func (a *App) loadState() error {
@@ -276,6 +545,7 @@ func (a *App) loadState() error {
 		return fmt.Errorf("parse %s: %w", a.statePath, err)
 	}
 	a.identity = state.Identity
+	a.receiveMode = state.ReceiveMode
 	if state.DownloadDir != "" {
 		a.downloadDir = state.DownloadDir
 	}
@@ -287,7 +557,7 @@ func (a *App) loadState() error {
 
 func (a *App) saveState() error {
 	a.mu.RLock()
-	state := savedState{Identity: a.identity, DownloadDir: a.downloadDir, Trusted: a.trusted}
+	state := savedState{Identity: a.identity, DownloadDir: a.downloadDir, Trusted: a.trusted, ReceiveMode: a.receiveMode}
 	b, err := json.MarshalIndent(state, "", "  ")
 	a.mu.RUnlock()
 	if err != nil {
@@ -440,11 +710,16 @@ func (a *App) localMux() http.Handler {
 	mux.HandleFunc("/api/info", a.handleLocalInfo)
 	mux.HandleFunc("/api/peers", a.handlePeers)
 	mux.HandleFunc("/api/transfers", a.handleTransfers)
+	mux.HandleFunc("/api/offers", a.handleLocalOffers)
 	mux.HandleFunc("/api/pair", a.requireLocalWrite(a.handleLocalPair))
 	mux.HandleFunc("/api/send", a.requireLocalWrite(a.handleLocalSend))
 	mux.HandleFunc("/api/add-peer", a.requireLocalWrite(a.handleAddPeer))
 	mux.HandleFunc("/api/open-downloads", a.requireLocalWrite(a.handleOpenDownloads))
 	mux.HandleFunc("/api/rotate-code", a.requireLocalWrite(a.handleRotateCode))
+	mux.HandleFunc("/api/offer-action", a.requireLocalWrite(a.handleOfferAction))
+	mux.HandleFunc("/api/receive-mode", a.requireLocalWrite(a.handleReceiveMode))
+	mux.HandleFunc("/api/cli/send", a.requireLocalControl(a.handleCLISend))
+	mux.HandleFunc("/api/cli/peers", a.requireLocalControl(a.handlePeers))
 	return securityHeaders(mux, true)
 }
 
@@ -452,6 +727,8 @@ func (a *App) publicMux() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/info", a.handlePublicInfo)
 	mux.HandleFunc("/api/v1/pair", a.handlePublicPair)
+	mux.HandleFunc("/api/v1/offers", a.handleOfferCreate)
+	mux.HandleFunc("/api/v1/offers/", a.handleOfferStatus)
 	mux.HandleFunc("/api/v1/files", a.handleReceive)
 	return securityHeaders(mux, false)
 }
@@ -478,13 +755,36 @@ func (a *App) requireLocalWrite(next http.HandlerFunc) http.HandlerFunc {
 			http.Error(w, "local request header required", http.StatusForbidden)
 			return
 		}
-		host, _, err := net.SplitHostPort(r.Host)
-		if err != nil || (host != "127.0.0.1" && host != "localhost" && host != "[::1]" && host != "::1") {
+		if !isLoopbackRequest(r) {
 			http.Error(w, "local host required", http.StatusForbidden)
 			return
 		}
 		next(w, r)
 	}
+}
+
+func (a *App) requireLocalControl(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRequest(r) {
+			writeError(w, http.StatusForbidden, errors.New("local host required"))
+			return
+		}
+		provided := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if len(provided) != len(a.controlToken) || !hmac.Equal([]byte(provided), []byte(a.controlToken)) {
+			writeError(w, http.StatusUnauthorized, errors.New("local control authorization failed"))
+			return
+		}
+		next(w, r)
+	}
+}
+
+func isLoopbackRequest(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.Host)
+	if err != nil {
+		host = r.Host
+	}
+	host = strings.Trim(host, "[]")
+	return host == "127.0.0.1" || host == "localhost" || host == "::1"
 }
 
 func (a *App) handleUI(w http.ResponseWriter, r *http.Request) {
@@ -505,7 +805,7 @@ func (a *App) handleLocalInfo(w http.ResponseWriter, r *http.Request) {
 	data := map[string]any{
 		"version": appVersion, "id": a.identity.ID, "name": a.identity.Name,
 		"os": runtime.GOOS, "fingerprint": a.fingerprint, "pairing_code": a.pairingCode,
-		"download_dir": a.downloadDir, "max_bytes": a.maxBytes,
+		"download_dir": a.downloadDir, "max_bytes": a.maxBytes, "receive_mode": a.receiveMode,
 	}
 	a.mu.RUnlock()
 	writeJSON(w, http.StatusOK, data)
@@ -563,6 +863,197 @@ func (a *App) handleTransfers(w http.ResponseWriter, r *http.Request) {
 	}
 	a.mu.RUnlock()
 	writeJSON(w, http.StatusOK, items)
+}
+
+func (a *App) handleLocalOffers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	a.mu.Lock()
+	a.cleanupOffersLocked(time.Now())
+	items := make([]*IncomingOffer, 0, len(a.offers))
+	for _, offer := range a.offers {
+		if offer.Status != "pending" && offer.Status != "receiving" {
+			continue
+		}
+		copyOffer := *offer
+		items = append(items, &copyOffer)
+	}
+	a.mu.Unlock()
+	sort.Slice(items, func(i, j int) bool { return items[i].Created > items[j].Created })
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (a *App) handleOfferAction(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		ID     string `json:"id"`
+		Action string `json:"action"`
+	}
+	if err := decodeJSON(r, &request, 4096); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if request.Action != "accept" && request.Action != "decline" {
+		writeError(w, http.StatusBadRequest, errors.New("action must be accept or decline"))
+		return
+	}
+	a.mu.Lock()
+	offer := a.offers[request.ID]
+	if offer == nil || offer.Status != "pending" || offerExpired(offer, time.Now()) {
+		a.mu.Unlock()
+		writeError(w, http.StatusConflict, errors.New("this transfer request is no longer pending"))
+		return
+	}
+	if request.Action == "accept" {
+		offer.Status = "accepted"
+	} else {
+		offer.Status = "declined"
+	}
+	a.mu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (a *App) handleReceiveMode(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Mode string `json:"mode"`
+	}
+	if err := decodeJSON(r, &request, 4096); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if !validReceiveMode(request.Mode) {
+		writeError(w, http.StatusBadRequest, errors.New("receive mode must be ask, trusted, or off"))
+		return
+	}
+	a.mu.Lock()
+	a.receiveMode = request.Mode
+	if request.Mode == receiveModeOff {
+		for _, offer := range a.offers {
+			if offer.Status == "pending" {
+				offer.Status = "declined"
+			}
+		}
+	}
+	a.mu.Unlock()
+	if err := a.saveState(); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"receive_mode": request.Mode})
+}
+
+func (a *App) handleOfferCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	senderID := r.Header.Get("X-UniDrop-Sender-ID")
+	peer, ok := a.authenticate(senderID, r.Header.Get("Authorization"))
+	if !ok {
+		writeError(w, http.StatusUnauthorized, errors.New("this device is not paired"))
+		return
+	}
+	var request offerRequest
+	if err := decodeJSON(r, &request, 64<<10); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	request.File = sanitizeFilename(request.File)
+	if request.File == "" || request.Bytes < 0 || request.Bytes > a.maxBytes {
+		writeError(w, http.StatusBadRequest, errors.New("invalid file offer"))
+		return
+	}
+	now := time.Now()
+	a.mu.Lock()
+	a.cleanupOffersLocked(now)
+	if a.receiveMode == receiveModeOff {
+		a.mu.Unlock()
+		writeError(w, http.StatusForbidden, errors.New("the receiver has paused incoming files"))
+		return
+	}
+	pendingForSender := 0
+	activeOffers := 0
+	for _, existing := range a.offers {
+		if existing.SenderID == senderID && existing.Status == "pending" {
+			pendingForSender++
+		}
+		if existing.Status == "pending" || existing.Status == "accepted" || existing.Status == "receiving" {
+			activeOffers++
+		}
+	}
+	if activeOffers >= maxPendingOffers || pendingForSender >= 10 {
+		a.mu.Unlock()
+		writeError(w, http.StatusTooManyRequests, errors.New("too many pending transfer requests"))
+		return
+	}
+	status := "pending"
+	if a.receiveMode == receiveModeTrusted {
+		status = "accepted"
+	}
+	offer := &IncomingOffer{
+		ID: randomHex(16), SenderID: senderID, SenderName: peer.Name,
+		File: request.File, Bytes: request.Bytes, Status: status,
+		Created: now.UTC().Format(time.RFC3339), Expires: now.Add(offerLifetime).UTC().Format(time.RFC3339),
+	}
+	a.offers[offer.ID] = offer
+	a.mu.Unlock()
+	if status == "pending" {
+		go notifyMessage("UniDrop request from "+peer.Name, request.File+" • "+humanBytes(request.Bytes))
+	}
+	httpStatus := http.StatusCreated
+	if status == "pending" {
+		httpStatus = http.StatusAccepted
+	}
+	writeJSON(w, httpStatus, offerResponse{ID: offer.ID, Status: status})
+}
+
+func (a *App) handleOfferStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	senderID := r.Header.Get("X-UniDrop-Sender-ID")
+	if _, ok := a.authenticate(senderID, r.Header.Get("Authorization")); !ok {
+		writeError(w, http.StatusUnauthorized, errors.New("this device is not paired"))
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/api/v1/offers/")
+	if len(id) != 32 {
+		http.NotFound(w, r)
+		return
+	}
+	a.mu.Lock()
+	offer := a.offers[id]
+	if offer == nil || offer.SenderID != senderID {
+		a.mu.Unlock()
+		http.NotFound(w, r)
+		return
+	}
+	if (offer.Status == "pending" || offer.Status == "accepted") && offerExpired(offer, time.Now()) {
+		offer.Status = "expired"
+	}
+	response := offerResponse{ID: offer.ID, Status: offer.Status}
+	a.mu.Unlock()
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (a *App) cleanupOffersLocked(now time.Time) {
+	for id, offer := range a.offers {
+		created, _ := time.Parse(time.RFC3339, offer.Created)
+		if offerExpired(offer, now) || ((!created.IsZero() && now.Sub(created) > 10*time.Minute) && offer.Status != "receiving") {
+			delete(a.offers, id)
+		}
+	}
+}
+
+func offerExpired(offer *IncomingOffer, now time.Time) bool {
+	expires, err := time.Parse(time.RFC3339, offer.Expires)
+	return err != nil || now.After(expires)
+}
+
+func validReceiveMode(mode string) bool {
+	return mode == receiveModeAsk || mode == receiveModeTrusted || mode == receiveModeOff
 }
 
 func (a *App) handleRotateCode(w http.ResponseWriter, r *http.Request) {
@@ -798,51 +1289,251 @@ func (a *App) handleLocalSend(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusRequestEntityTooLarge, errors.New("file exceeds this device's size limit"))
 		return
 	}
+	peer, err := a.readyPeer(peerID)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+	body := http.MaxBytesReader(w, r.Body, a.maxBytes)
+	if err := a.sendStream(r.Context(), peer, fileName, r.ContentLength, body); err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"ok": true, "bytes": r.ContentLength})
+}
+
+func (a *App) handleCLISend(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var request cliSendRequest
+	if err := decodeJSON(r, &request, 512<<10); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if strings.TrimSpace(request.Target) == "" || len(request.Paths) == 0 || len(request.Paths) > 100 {
+		writeError(w, http.StatusBadRequest, errors.New("a target and between 1 and 100 files are required"))
+		return
+	}
+	peer, err := a.resolveTarget(request.Target)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	result := cliSendResult{Target: peer.Trusted.Name, Files: make([]string, 0, len(request.Paths))}
+	for _, path := range request.Paths {
+		if !filepath.IsAbs(path) {
+			writeError(w, http.StatusBadRequest, errors.New("command bridge requires absolute file paths"))
+			return
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("inspect %s: %w", path, err))
+			return
+		}
+		if !info.Mode().IsRegular() {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("%s is not a regular file", path))
+			return
+		}
+		if info.Size() > a.maxBytes {
+			writeError(w, http.StatusRequestEntityTooLarge, fmt.Errorf("%s exceeds the file size limit", filepath.Base(path)))
+			return
+		}
+		file, err := os.Open(path)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		err = a.sendStream(r.Context(), peer, filepath.Base(path), info.Size(), file)
+		_ = file.Close()
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+		result.Files = append(result.Files, filepath.Base(path))
+		result.Bytes += info.Size()
+	}
+	writeJSON(w, http.StatusCreated, result)
+}
+
+type readyPeerConnection struct {
+	Trusted    *TrustedPeer
+	Discovered *DiscoveredPeer
+}
+
+func (a *App) readyPeer(peerID string) (*readyPeerConnection, error) {
 	a.mu.RLock()
 	trusted := a.trusted[peerID]
 	discovered := a.discovered[peerID]
 	if trusted != nil {
-		trustedCopy := *trusted
-		trusted = &trustedCopy
+		copyTrusted := *trusted
+		trusted = &copyTrusted
 	}
 	if discovered != nil {
-		discoveredCopy := *discovered
-		discovered = &discoveredCopy
+		copyDiscovered := *discovered
+		discovered = &copyDiscovered
 	}
 	a.mu.RUnlock()
-	if trusted == nil || discovered == nil || trusted.OutgoingToken == "" || !hmac.Equal([]byte(trusted.Fingerprint), []byte(discovered.Fingerprint)) {
-		writeError(w, http.StatusUnauthorized, errors.New("pair with this online peer before sending"))
-		return
+	if trusted == nil || discovered == nil || time.Since(discovered.LastSeen) > 5*time.Minute || trusted.OutgoingToken == "" || !hmac.Equal([]byte(trusted.Fingerprint), []byte(discovered.Fingerprint)) {
+		return nil, errors.New("pair with this online peer before sending")
 	}
-	transfer := a.addTransfer("send", trusted.Name, fileName)
-	requestURL := "https://" + discovered.Address + "/api/v1/files?name=" + url.QueryEscape(fileName)
-	out, err := http.NewRequestWithContext(r.Context(), http.MethodPost, requestURL, http.MaxBytesReader(w, r.Body, a.maxBytes))
+	return &readyPeerConnection{Trusted: trusted, Discovered: discovered}, nil
+}
+
+func (a *App) resolveTarget(target string) (*readyPeerConnection, error) {
+	needle := normalizeDeviceTarget(target)
+	if needle == "" {
+		return nil, errors.New("device name is empty")
+	}
+	a.mu.RLock()
+	matches := make([]string, 0, 2)
+	for id, peer := range a.discovered {
+		if time.Since(peer.LastSeen) > peerLifetime {
+			continue
+		}
+		host, _, _ := net.SplitHostPort(peer.Address)
+		keys := []string{normalizeDeviceTarget(id), normalizeDeviceTarget(peer.Name), normalizeDeviceTarget(cliDeviceName(peer.Name)), normalizeDeviceTarget(host)}
+		for _, key := range keys {
+			if key == needle {
+				matches = append(matches, id)
+				break
+			}
+		}
+	}
+	a.mu.RUnlock()
+	if len(matches) > 1 {
+		return nil, fmt.Errorf("%q matches multiple devices; use 'unidrop peers' and choose a device address", target)
+	}
+	if len(matches) == 1 {
+		return a.readyPeer(matches[0])
+	}
+	if strings.Contains(target, ".") || strings.Contains(target, ":") {
+		peer, err := a.inspectAddress(target)
+		if err == nil {
+			a.recordDiscovered(peer)
+			return a.readyPeer(peer.ID)
+		}
+	}
+	return nil, fmt.Errorf("could not find %q; run 'unidrop peers' to list visible devices", target)
+}
+
+func normalizeDeviceTarget(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = strings.TrimSuffix(value, ".")
+	value = strings.TrimSuffix(value, ".local")
+	value = strings.Join(strings.Fields(value), "-")
+	return value
+}
+
+func (a *App) sendStream(ctx context.Context, peer *readyPeerConnection, fileName string, size int64, body io.Reader) error {
+	fileName = sanitizeFilename(fileName)
+	if fileName == "" || size < 0 || size > a.maxBytes {
+		return errors.New("invalid file transfer")
+	}
+	transfer := a.addTransfer("send", peer.Trusted.Name, fileName)
+	a.setTransferStatus(transfer, "waiting for approval")
+	offerID, err := a.requestOffer(ctx, peer, fileName, size)
 	if err != nil {
 		a.finishTransfer(transfer, "failed", err)
-		writeError(w, http.StatusInternalServerError, err)
-		return
+		return err
 	}
-	out.ContentLength = r.ContentLength
+	a.setTransferStatus(transfer, "sending")
+	requestURL := "https://" + peer.Discovered.Address + "/api/v1/files?name=" + url.QueryEscape(fileName) + "&offer=" + url.QueryEscape(offerID)
+	out, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, body)
+	if err != nil {
+		a.finishTransfer(transfer, "failed", err)
+		return err
+	}
+	out.ContentLength = size
 	out.Header.Set("Content-Type", "application/octet-stream")
-	out.Header.Set("Authorization", "Bearer "+trusted.OutgoingToken)
-	out.Header.Set("X-UniDrop-Sender-ID", a.identity.ID)
-	client := pinnedClient(trusted.Fingerprint)
-	resp, err := client.Do(out)
+	a.authorizePeerRequest(out, peer.Trusted)
+	resp, err := pinnedClient(peer.Trusted.Fingerprint).Do(out)
 	if err != nil {
+		err = fmt.Errorf("send to %s: %w", peer.Trusted.Name, err)
 		a.finishTransfer(transfer, "failed", err)
-		writeError(w, http.StatusBadGateway, fmt.Errorf("send to %s: %w", trusted.Name, err))
-		return
+		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
 		err := responseError(resp)
 		a.finishTransfer(transfer, "failed", err)
-		writeError(w, http.StatusBadGateway, err)
-		return
+		return err
 	}
-	a.updateTransferBytes(transfer, r.ContentLength)
+	a.updateTransferBytes(transfer, size)
 	a.finishTransfer(transfer, "complete", nil)
-	writeJSON(w, http.StatusCreated, map[string]any{"ok": true, "bytes": r.ContentLength})
+	return nil
+}
+
+func (a *App) requestOffer(ctx context.Context, peer *readyPeerConnection, fileName string, size int64) (string, error) {
+	body, _ := json.Marshal(offerRequest{File: fileName, Bytes: size})
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://"+peer.Discovered.Address+"/api/v1/offers", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	a.authorizePeerRequest(request, peer.Trusted)
+	client := pinnedClient(peer.Trusted.Fingerprint)
+	response, err := client.Do(request)
+	if err != nil {
+		return "", err
+	}
+	if response.StatusCode != http.StatusAccepted && response.StatusCode != http.StatusCreated {
+		err := responseError(response)
+		_ = response.Body.Close()
+		return "", err
+	}
+	var offer offerResponse
+	err = json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&offer)
+	_ = response.Body.Close()
+	if err != nil || len(offer.ID) != 32 {
+		return "", errors.New("receiver returned an invalid transfer offer")
+	}
+	if offer.Status == "accepted" {
+		return offer.ID, nil
+	}
+	ticker := time.NewTicker(750 * time.Millisecond)
+	defer ticker.Stop()
+	timeout := time.NewTimer(offerLifetime)
+	defer timeout.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-timeout.C:
+			return "", errors.New("receiver did not respond before the request expired")
+		case <-ticker.C:
+			statusRequest, _ := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+peer.Discovered.Address+"/api/v1/offers/"+offer.ID, nil)
+			a.authorizePeerRequest(statusRequest, peer.Trusted)
+			statusResponse, err := client.Do(statusRequest)
+			if err != nil {
+				return "", err
+			}
+			if statusResponse.StatusCode != http.StatusOK {
+				err := responseError(statusResponse)
+				_ = statusResponse.Body.Close()
+				return "", err
+			}
+			err = json.NewDecoder(io.LimitReader(statusResponse.Body, 64<<10)).Decode(&offer)
+			_ = statusResponse.Body.Close()
+			if err != nil {
+				return "", err
+			}
+			switch offer.Status {
+			case "accepted":
+				return offer.ID, nil
+			case "declined":
+				return "", errors.New("receiver declined the file")
+			case "expired":
+				return "", errors.New("receiver did not respond before the request expired")
+			}
+		}
+	}
+}
+
+func (a *App) authorizePeerRequest(request *http.Request, peer *TrustedPeer) {
+	request.Header.Set("Authorization", "Bearer "+peer.OutgoingToken)
+	request.Header.Set("X-UniDrop-Sender-ID", a.identity.ID)
 }
 
 func (a *App) handleReceive(w http.ResponseWriter, r *http.Request) {
@@ -869,6 +1560,17 @@ func (a *App) handleReceive(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("safe filename is required"))
 		return
 	}
+	offerID := r.URL.Query().Get("offer")
+	if err := a.beginReceiveOffer(offerID, senderID, name, r.ContentLength); err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	offerComplete := false
+	defer func() {
+		if !offerComplete {
+			a.updateOfferStatus(offerID, "failed")
+		}
+	}()
 	transfer := a.addTransfer("receive", peer.Name, name)
 	tmp, err := os.CreateTemp(a.downloadDir, ".unidrop-*.part")
 	if err != nil {
@@ -926,9 +1628,43 @@ func (a *App) handleReceive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	complete = true
+	offerComplete = true
+	a.updateOfferStatus(offerID, "complete")
 	a.finishTransfer(transfer, "complete", nil)
 	go notifyReceived(filepath.Base(finalPath), peer.Name)
 	writeJSON(w, http.StatusCreated, map[string]any{"ok": true, "file": filepath.Base(finalPath), "bytes": written})
+}
+
+func (a *App) beginReceiveOffer(id, senderID, file string, size int64) error {
+	if len(id) != 32 {
+		return errors.New("a valid accepted transfer offer is required")
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	offer := a.offers[id]
+	if offer == nil || offer.SenderID != senderID {
+		return errors.New("transfer offer was not found")
+	}
+	if offerExpired(offer, time.Now()) {
+		offer.Status = "expired"
+		return errors.New("transfer offer expired")
+	}
+	if offer.Status != "accepted" {
+		return fmt.Errorf("transfer offer is %s", offer.Status)
+	}
+	if offer.File != file || offer.Bytes != size {
+		return errors.New("file does not match the accepted transfer offer")
+	}
+	offer.Status = "receiving"
+	return nil
+}
+
+func (a *App) updateOfferStatus(id, status string) {
+	a.mu.Lock()
+	if offer := a.offers[id]; offer != nil {
+		offer.Status = status
+	}
+	a.mu.Unlock()
 }
 
 func (a *App) authenticate(senderID, authorization string) (*TrustedPeer, bool) {
@@ -968,6 +1704,12 @@ func (a *App) finishTransfer(t *Transfer, status string, err error) {
 	if err != nil {
 		t.Error = err.Error()
 	}
+	a.mu.Unlock()
+}
+
+func (a *App) setTransferStatus(t *Transfer, status string) {
+	a.mu.Lock()
+	t.Status = status
 	a.mu.Unlock()
 }
 
@@ -1318,8 +2060,10 @@ func openTarget(target string) error {
 }
 
 func notifyReceived(file, sender string) {
-	title := "UniDrop received " + file
-	message := "From " + sender
+	notifyMessage("UniDrop received "+file, "From "+sender)
+}
+
+func notifyMessage(title, message string) {
 	switch runtime.GOOS {
 	case "darwin":
 		script := fmt.Sprintf("display notification %s with title %s", strconv.Quote(message), strconv.Quote(title))
@@ -1334,6 +2078,23 @@ func notifyReceived(file, sender string) {
 	}
 }
 
+func humanBytes(bytes int64) string {
+	if bytes < 1024 {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	units := []string{"KB", "MB", "GB", "TB"}
+	value := float64(bytes)
+	unit := "B"
+	for _, candidate := range units {
+		value /= 1024
+		unit = candidate
+		if value < 1024 {
+			break
+		}
+	}
+	return fmt.Sprintf("%.1f %s", value, unit)
+}
+
 const uiHTML = `<!doctype html>
 <html lang="en">
 <head>
@@ -1343,6 +2104,7 @@ const uiHTML = `<!doctype html>
 :root{color-scheme:dark;--ink:#f5f7fb;--muted:#9ba7ba;--card:#111827cc;--line:#29344a;--blue:#5ba7ff;--green:#5ee2a0;--red:#ff7c8f}
 *{box-sizing:border-box}body{margin:0;min-height:100vh;font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);background:radial-gradient(circle at 12% 10%,#17305c 0,transparent 32%),radial-gradient(circle at 88% 8%,#27366b 0,transparent 29%),#070b13}
 main{width:min(1040px,calc(100% - 28px));margin:0 auto;padding:28px 0 60px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px}.brand{display:flex;align-items:center;gap:13px}.logo{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(145deg,#68c6ff,#675bff);box-shadow:0 10px 35px #488dff55;font-size:23px}.brand h1{margin:0;font-size:24px}.brand p{margin:1px 0 0;color:var(--muted);font-size:13px}.button,button{border:1px solid var(--line);background:#172033;color:var(--ink);border-radius:11px;padding:10px 14px;font:inherit;font-weight:650;cursor:pointer}button:hover{border-color:#536582}.primary{background:linear-gradient(135deg,#4f92ff,#7668ff);border:0}.ghost{background:transparent}.grid{display:grid;grid-template-columns:1.45fr .8fr;gap:18px}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:19px;box-shadow:0 18px 65px #0005;backdrop-filter:blur(12px)}h2{font-size:15px;margin:0 0 14px;color:#dce5f3}.code{font:700 20px/1.25 ui-monospace,SFMono-Regular,monospace;letter-spacing:1px;margin:13px 0 12px;white-space:nowrap}.muted{color:var(--muted)}.small{font-size:12px}.devices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;min-height:94px}.device{display:flex;align-items:center;gap:11px;text-align:left;width:100%;padding:13px;background:#0d1422;border:1px solid var(--line);border-radius:13px}.device.selected{border-color:var(--blue);box-shadow:0 0 0 2px #5ba7ff22}.device.offline{opacity:.55}.os{width:37px;height:37px;border-radius:10px;background:#202b40;display:grid;place-items:center;font-size:18px}.device strong,.device span{display:block;overflow:hidden;text-overflow:ellipsis}.status{color:var(--green);font-size:12px}.offline .status{color:var(--muted)}.drop{display:block;cursor:pointer;border:1.5px dashed #40506c;border-radius:16px;padding:27px;text-align:center;margin-top:13px;transition:.15s}.drop.drag{border-color:var(--blue);background:#5ba7ff12}.drop input{display:none}.drop strong{display:block;font-size:17px;margin-bottom:4px}.sendbar{display:flex;gap:9px;align-items:center;margin-top:12px}.sendbar input,.manual input{min-width:0;flex:1;border:1px solid var(--line);background:#09101d;color:var(--ink);border-radius:10px;padding:10px 12px;font:inherit}.progress{height:7px;background:#202a3c;border-radius:10px;overflow:hidden;margin-top:10px}.progress i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--blue),var(--green));transition:.1s}.manual{display:flex;gap:8px;margin-top:10px}.transfer{padding:10px 0;border-top:1px solid #202a3c;display:grid;grid-template-columns:1fr auto;gap:4px}.transfer:first-child{border-top:0}.transfer strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.good{color:var(--green)}.bad{color:var(--red)}.empty{padding:22px 8px;color:var(--muted);text-align:center}.wide{grid-column:1/-1}.toast{position:fixed;right:18px;bottom:18px;max-width:360px;padding:13px 16px;border-radius:12px;background:#202b40;border:1px solid #46546b;box-shadow:0 15px 50px #0008;display:none}.toast.bad{display:block;border-color:#7c3c4c}.toast.good{display:block;border-color:#39755b}@media(max-width:760px){.grid{grid-template-columns:1fr}.devices{grid-template-columns:1fr}.top{align-items:flex-start}.top>.button{display:none}}
+.sectionhead{display:flex;align-items:center;justify-content:space-between;gap:12px}.sectionhead h2{margin:0}.mode{border:1px solid var(--line);background:#09101d;color:var(--ink);border-radius:10px;padding:8px 10px;font:inherit}.offerlist{display:grid;gap:10px;margin-top:14px}.offer{display:flex;align-items:center;gap:13px;background:#0d1422;border:1px solid #35435c;border-radius:14px;padding:13px}.offericon{width:40px;height:40px;flex:0 0 auto;border-radius:11px;display:grid;place-items:center;background:#283651;color:var(--blue);font-size:20px}.offermain{min-width:0;flex:1}.offermain strong,.offermain span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.offeractions{display:flex;gap:7px}.decline{color:var(--red)}@media(max-width:560px){.sectionhead,.offer{align-items:stretch;flex-direction:column}.offericon{display:none}.offeractions button{flex:1}.mode{width:100%}}
 </style>
 </head>
 <body><main>
@@ -1350,6 +2112,7 @@ main{width:min(1040px,calc(100% - 28px));margin:0 auto;padding:28px 0 60px}.top{
 <div class="grid">
 <section class="card"><h2>Nearby devices</h2><div id="devices" class="devices"><div class="empty">Looking on your local network…</div></div><div class="manual"><input id="manual" placeholder="Can't see it? Enter 192.168.1.20:43338"><button onclick="addPeer()">Add</button></div></section>
 <aside class="card"><h2>Pair this device</h2><div class="muted small">Copy this one-time key to the sending device.</div><div id="code" class="code">----&nbsp;----&nbsp;----&nbsp;----</div><button class="ghost small" onclick="copyCode()">Copy key</button> <button class="ghost small" onclick="rotateCode()">Rotate</button><div class="muted small" style="margin-top:13px">TLS 1.3 • certificate pinning • local network only</div></aside>
+<section class="card wide"><div class="sectionhead"><h2>Incoming requests</h2><select id="receiveMode" class="mode" onchange="setReceiveMode()" aria-label="Receive mode"><option value="ask">Ask every time</option><option value="trusted">Auto-accept paired devices</option><option value="off">Receiving paused</option></select></div><div id="offers" class="offerlist"><div class="empty">No one is waiting to send you a file</div></div></section>
 <section class="card"><h2>Send files <span id="selectedLabel" class="muted">— choose a device</span></h2><label class="drop" id="drop"><input id="files" type="file" multiple><strong>Drop files here</strong><span class="muted">or click to choose files</span></label><div class="sendbar"><input id="pairCode" maxlength="19" autocomplete="off" placeholder="Other device's pairing key"><button class="primary" id="send" onclick="sendSelected()">Send</button></div><div class="progress"><i id="progress"></i></div><div id="queue" class="muted small" style="margin-top:7px"></div></section>
 <aside class="card"><h2>Recent activity</h2><div id="transfers"><div class="empty">No transfers yet</div></div></aside>
 </div></main><div id="toast" class="toast"></div>
@@ -1358,10 +2121,11 @@ let selected=null,chosen=[],peers=[];const $=id=>document.getElementById(id);
 async function api(path,options={}){options.headers={...(options.headers||{}),'X-UniDrop-UI':'1'};const r=await fetch(path,options);let body={};try{body=await r.json()}catch{}if(!r.ok)throw new Error(body.error||r.statusText);return body}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function icon(os){return os==='darwin'?'●':os==='windows'?'⊞':os==='linux'?'◆':'◇'}
-async function refresh(){try{const [info,p,t]=await Promise.all([api('/api/info'),api('/api/peers'),api('/api/transfers')]);peers=p;$('deviceName').textContent=info.name+' • '+info.os;$('code').textContent=info.pairing_code;renderPeers();renderTransfers(t)}catch(e){toast(e.message,false)}}
+async function refresh(){try{const [info,p,t,o]=await Promise.all([api('/api/info'),api('/api/peers'),api('/api/transfers'),api('/api/offers')]);peers=p;$('deviceName').textContent=info.name+' • '+info.os;$('code').textContent=info.pairing_code;$('receiveMode').value=info.receive_mode;renderPeers();renderTransfers(t);renderOffers(o)}catch(e){toast(e.message,false)}}
 function renderPeers(){const online=peers.filter(p=>p.online);if(!online.length){$('devices').innerHTML='<div class="empty">No devices found yet. Make sure UniDrop is open on both machines.</div>';return}$('devices').innerHTML=online.map(p=>'<button class="device '+(selected===p.id?'selected':'')+'" data-peer="'+p.id+'"><span class="os">'+icon(p.os)+'</span><span><strong>'+esc(p.name)+'</strong><span class="status">'+(p.trusted?'Paired and ready':'Code required')+'</span></span></button>').join('');document.querySelectorAll('[data-peer]').forEach(b=>b.onclick=()=>choose(b.dataset.peer))}
 function choose(id){selected=id;const p=peers.find(x=>x.id===id);$('selectedLabel').textContent=p?'— '+p.name:'';$('pairCode').style.display=p?.trusted?'none':'block';renderPeers()}
 function renderTransfers(items){$('transfers').innerHTML=items.length?items.slice(0,6).map(t=>'<div class="transfer"><strong>'+(t.direction==='send'?'↑':'↓')+' '+esc(t.file)+'</strong><span class="'+(t.status==='complete'?'good':t.status==='failed'?'bad':'muted')+'">'+esc(t.status)+'</span><span class="muted small">'+esc(t.peer)+'</span><span class="muted small">'+size(t.bytes)+'</span></div>').join(''):'<div class="empty">No transfers yet</div>'}
+function renderOffers(items){$('offers').innerHTML=items.length?items.map(o=>'<div class="offer"><span class="offericon">↓</span><span class="offermain"><strong>'+esc(o.file)+'</strong><span class="muted">From '+esc(o.sender_name)+' • '+size(o.bytes)+'</span></span>'+(o.status==='pending'?'<span class="offeractions"><button class="ghost decline" data-offer-action="decline" data-offer="'+o.id+'">Decline</button><button class="primary" data-offer-action="accept" data-offer="'+o.id+'">Accept</button></span>':'<span class="status">Receiving…</span>')+'</div>').join(''):'<div class="empty">No one is waiting to send you a file</div>';document.querySelectorAll('[data-offer-action]').forEach(b=>b.onclick=()=>actOffer(b.dataset.offer,b.dataset.offerAction))}
 function size(n){if(!n)return '0 B';const u=['B','KB','MB','GB','TB'];let i=0;while(n>=1024&&i<u.length-1){n/=1024;i++}return n.toFixed(i?1:0)+' '+u[i]}
 const drop=$('drop'),input=$('files');drop.onclick=()=>input.click();input.onchange=()=>setFiles([...input.files]);['dragenter','dragover'].forEach(e=>drop.addEventListener(e,x=>{x.preventDefault();drop.classList.add('drag')}));['dragleave','drop'].forEach(e=>drop.addEventListener(e,x=>{x.preventDefault();drop.classList.remove('drag')}));drop.addEventListener('drop',e=>setFiles([...e.dataTransfer.files]));function setFiles(f){chosen=f;$('queue').textContent=f.length?f.length+' file'+(f.length===1?'':'s')+' • '+size(f.reduce((n,x)=>n+x.size,0)):''}
 async function ensurePaired(){let p=peers.find(x=>x.id===selected);if(!p)throw new Error('Choose an online device');if(p.trusted)return;const code=$('pairCode').value.trim();if(!/^[0-9a-fA-F]{4}(-?[0-9a-fA-F]{4}){3}$/.test(code))throw new Error("Enter the pairing key shown on "+p.name);await api('/api/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({peer_id:p.id,code})});await refresh();p=peers.find(x=>x.id===selected);if(!p?.trusted)throw new Error('Pairing did not complete')}
@@ -1369,6 +2133,8 @@ async function sendSelected(){try{if(!chosen.length)throw new Error('Choose at l
 function upload(file,onProgress){return new Promise((resolve,reject)=>{const x=new XMLHttpRequest();x.open('POST','/api/send?peer='+encodeURIComponent(selected)+'&filename='+encodeURIComponent(file.name));x.setRequestHeader('X-UniDrop-UI','1');x.setRequestHeader('Content-Type','application/octet-stream');x.upload.onprogress=e=>{if(e.lengthComputable)onProgress(e.loaded)};x.onload=()=>{let b={};try{b=JSON.parse(x.responseText)}catch{};x.status>=200&&x.status<300?resolve(b):reject(new Error(b.error||x.statusText))};x.onerror=()=>reject(new Error('Network connection failed'));x.send(file)})}
 async function addPeer(){try{const address=$('manual').value.trim();if(!address)throw new Error('Enter the other device address');await api('/api/add-peer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({address})});$('manual').value='';await refresh();toast('Device added',true)}catch(e){toast(e.message,false)}}
 async function rotateCode(){try{await api('/api/rotate-code',{method:'POST'});await refresh()}catch(e){toast(e.message,false)}}
+async function actOffer(id,action){try{await api('/api/offer-action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,action})});toast(action==='accept'?'Transfer accepted':'Transfer declined',action==='accept');await refresh()}catch(e){toast(e.message,false)}}
+async function setReceiveMode(){try{const mode=$('receiveMode').value;await api('/api/receive-mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode})});toast(mode==='off'?'Incoming files paused':mode==='ask'?'Approval required for every file':'Paired devices will be accepted automatically',true);await refresh()}catch(e){toast(e.message,false)}}
 async function copyCode(){try{await navigator.clipboard.writeText($('code').textContent);toast('Pairing key copied',true)}catch(e){toast('Copy the key manually',false)}}
 async function openDownloads(){try{await api('/api/open-downloads',{method:'POST'})}catch(e){toast(e.message,false)}}
 let toastTimer;function toast(message,ok){const t=$('toast');t.textContent=message;t.className='toast '+(ok?'good':'bad');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.className='toast',4500)}

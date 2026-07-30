@@ -3,7 +3,7 @@
 param([switch]$NoStart)
 $ErrorActionPreference = 'Stop'
 
-$AppVersion = '0.1.0'
+$AppVersion = '0.2.0'
 $GoVersion = '1.26.5'
 $ScriptDirectory = $PSScriptRoot
 $TempDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("unidrop-install-" + [guid]::NewGuid().ToString('N'))
@@ -66,7 +66,7 @@ try {
             $env:CGO_ENABLED = '0'; $env:GOOS = 'windows'; $env:GOARCH = $TargetArch
             Push-Location $ScriptDirectory
             try {
-                & $GoExecutable build -trimpath "-ldflags=-s -w -H=windowsgui -X main.appVersion=$AppVersion" -o $Destination .
+                & $GoExecutable build -trimpath "-ldflags=-s -w -X main.appVersion=$AppVersion" -o $Destination .
                 if ($LASTEXITCODE -ne 0) { throw 'Go build failed' }
             } finally { Pop-Location }
         } finally {
@@ -74,29 +74,57 @@ try {
         }
     }
 
+    # Keep the installed binary console-capable so `unidrop send` and
+    # `unidrop peers` behave normally in PowerShell. These tiny launchers hide
+    # the background process when Windows starts it from a shortcut.
+    $BackgroundLauncher = Join-Path $InstallDirectory 'unidrop-background.vbs'
+    $OpenLauncher = Join-Path $InstallDirectory 'unidrop-open.vbs'
+    @'
+Set Files = CreateObject("Scripting.FileSystemObject")
+Set Shell = CreateObject("WScript.Shell")
+Folder = Files.GetParentFolderName(WScript.ScriptFullName)
+Shell.Run Chr(34) & Folder & "\unidrop.exe" & Chr(34) & " --no-open", 0, False
+'@ | Set-Content -Encoding ASCII $BackgroundLauncher
+    @'
+Set Files = CreateObject("Scripting.FileSystemObject")
+Set Shell = CreateObject("WScript.Shell")
+Folder = Files.GetParentFolderName(WScript.ScriptFullName)
+Shell.Run Chr(34) & Folder & "\unidrop.exe" & Chr(34) & " --open", 0, False
+'@ | Set-Content -Encoding ASCII $OpenLauncher
+
+    $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $PathParts = @($UserPath -split ';' | Where-Object { $_ })
+    if (-not ($PathParts | Where-Object { $_.TrimEnd('\') -ieq $InstallDirectory.TrimEnd('\') })) {
+        $NewUserPath = if ($UserPath) { "$UserPath;$InstallDirectory" } else { $InstallDirectory }
+        [Environment]::SetEnvironmentVariable('Path', $NewUserPath, 'User')
+        $env:Path = "$env:Path;$InstallDirectory"
+        Write-UniDrop 'added the UniDrop command to your user PATH (new terminals will see it)'
+    }
+
     $Shell = New-Object -ComObject WScript.Shell
     $StartupDirectory = [Environment]::GetFolderPath('Startup')
     $StartupShortcut = $Shell.CreateShortcut((Join-Path $StartupDirectory 'UniDrop.lnk'))
-    $StartupShortcut.TargetPath = $Destination
-    $StartupShortcut.Arguments = '--no-open'
+    $StartupShortcut.TargetPath = "$env:WINDIR\System32\wscript.exe"
+    $StartupShortcut.Arguments = "`"$BackgroundLauncher`""
     $StartupShortcut.WorkingDirectory = $InstallDirectory
     $StartupShortcut.Description = 'UniDrop secure local file sharing service'
     $StartupShortcut.Save()
 
     $ProgramsDirectory = [Environment]::GetFolderPath('Programs')
     $MenuShortcut = $Shell.CreateShortcut((Join-Path $ProgramsDirectory 'UniDrop.lnk'))
-    $MenuShortcut.TargetPath = $Destination
-    $MenuShortcut.Arguments = '--open'
+    $MenuShortcut.TargetPath = "$env:WINDIR\System32\wscript.exe"
+    $MenuShortcut.Arguments = "`"$OpenLauncher`""
     $MenuShortcut.WorkingDirectory = $InstallDirectory
     $MenuShortcut.Description = 'Open UniDrop'
     $MenuShortcut.Save()
 
     if (-not $NoStart) {
-        Start-Process -FilePath $Destination -ArgumentList '--no-open' -WorkingDirectory $InstallDirectory
+        Start-Process -FilePath "$env:WINDIR\System32\wscript.exe" -ArgumentList "`"$BackgroundLauncher`"" -WorkingDirectory $InstallDirectory
     }
     Write-UniDrop "installed $Destination"
     Write-UniDrop 'Open UniDrop from the Start menu or visit http://127.0.0.1:43337'
     Write-UniDrop 'Windows may ask once for permission to communicate on private networks.'
+    Write-UniDrop 'From a new PowerShell window, try: unidrop peers'
 } finally {
     if (Test-Path $TempDirectory) { Remove-Item -Recurse -Force $TempDirectory }
 }

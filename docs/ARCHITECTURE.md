@@ -18,13 +18,14 @@ Bluetooth can later serve as a discovery or IP-bootstrap channel, but it should 
 ```mermaid
 flowchart LR
     UIA["Sender browser UI\n127.0.0.1:43337"] --> DA["Sender UniDrop daemon"]
+    CLIA["unidrop send file\nminibrain.local"] -->|"loopback + private token"| DA
     DA -. "UDP multicast discovery" .-> DB["Receiver UniDrop daemon"]
-    DA == "TLS 1.3 pinned HTTPS\nstreamed file" ==> DB
+    DA == "TLS 1.3 pinned HTTPS\noffer, approval, streamed file" ==> DB
     DB --> DL["Downloads/UniDrop"]
-    UIB["Receiver browser UI\n127.0.0.1:43337"] --> DB
+    UIB["Receiver approval UI\nAccept or Decline"] --> DB
 ```
 
-Only the loopback interface can reach the control-panel API. LAN peers can reach a deliberately small HTTPS API: identity inspection, pairing, and authenticated file receive.
+Only the loopback interface can reach the control-panel API. Browser mutations require a private request header. CLI routes additionally require a random 256-bit token stored with user-only permissions. LAN peers can reach a deliberately small HTTPS API: identity inspection, pairing, authenticated offers, and accepted file receive.
 
 ## Pairing and trust
 
@@ -39,6 +40,22 @@ On first pairing:
 5. Both sides pin the other's certificate fingerprint for every later request.
 
 This makes pairing mutual: after pairing once, either machine can send when it can discover the other. Reinstalling UniDrop creates a new certificate and requires pairing again.
+
+## Offer and approval lifecycle
+
+Every file has a separate, short-lived offer bound to its paired sender ID, sanitized filename, and exact byte count. The receiver chooses one persistent mode:
+
+1. `ask` creates a pending card and sends no file bytes until **Accept** is pressed.
+2. `trusted` immediately approves offers from paired devices.
+3. `off` refuses new offers and declines anything still pending.
+
+The sender polls the authenticated offer status for up to two minutes. Only an accepted, unexpired offer can be consumed, and it can enter the receiving state once. Changing the filename, sender, or content length causes the receiver to reject the upload.
+
+## Friendly command bridge
+
+`unidrop peers` gets the live discovery view from the loopback daemon. `unidrop send <files...> <device>` resolves a case-insensitive device ID, display name, friendly `name.local` alias, discovered address, or a manually reachable hostname. It then opens each local regular file inside the daemon and uses the same offer and streaming path as the browser.
+
+The token in `control-token` prevents an unrelated web page from invoking filesystem paths through the bridge. The bridge accepts only loopback HTTP, absolute regular-file paths, and a correctly authenticated caller running as the same OS user.
 
 ## OS-specific shell layer
 
@@ -77,14 +94,16 @@ The LAN server exposes these versioned routes:
 
 - `GET /api/v1/info`: protocol/device metadata and certificate fingerprint
 - `POST /api/v1/pair`: certificate-bound mutual pairing
-- `POST /api/v1/files?name=...`: authenticated raw file stream
+- `POST /api/v1/offers`: authenticated filename/size offer
+- `GET /api/v1/offers/{id}`: authenticated approval-status polling
+- `POST /api/v1/files?name=...&offer=...`: authenticated, pre-approved raw file stream
 
 Files are deliberately sent as raw request bodies rather than multipart forms. That keeps memory use bounded and makes the sender proxy each selected browser file directly to the receiver.
 
 ## Roadmap
 
 1. Native tray/menu-bar adapters with **Open**, **Receive mode**, and **Quit**.
-2. Receiver approval modes: contacts only, ask every time, and temporary everyone mode.
+2. Finder, Explorer, Dolphin, Nautilus, and Thunar **Send with UniDrop** entry points backed by the command bridge.
 3. Signed/notarized installers and an update manifest with binary checksums.
 4. Optional QR pairing and a stronger PAKE-based short-code mode.
 5. Folder transfer through a streamed, validated archive format.

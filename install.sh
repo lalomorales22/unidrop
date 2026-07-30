@@ -3,7 +3,7 @@
 # It installs per-user, needs no sudo, and never downloads third-party modules.
 set -eu
 
-APP_VERSION="0.1.0"
+APP_VERSION="0.2.0"
 GO_VERSION="1.26.5"
 SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
 TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/unidrop-install.XXXXXX")
@@ -13,6 +13,29 @@ trap 'rm -rf "$TEMP_DIR"' EXIT HUP INT TERM
 
 say() { printf '%s\n' "UniDrop: $*"; }
 fail() { printf '%s\n' "UniDrop installer error: $*" >&2; exit 1; }
+
+ensure_cli_path() {
+  cli_dir=$1
+  case ":${PATH:-}:" in
+    *":$cli_dir:"*) return ;;
+  esac
+  shell_name=${SHELL##*/}
+  case "$shell_name" in
+    zsh) profile="$INSTALL_HOME/.zprofile" ;;
+    fish) profile="$INSTALL_HOME/.config/fish/config.fish" ;;
+    *) profile="$INSTALL_HOME/.profile" ;;
+  esac
+  if [ "$shell_name" = "fish" ]; then
+    path_line="fish_add_path \"$cli_dir\""
+  else
+    path_line="export PATH=\"$cli_dir:\$PATH\""
+  fi
+  mkdir -p "$(dirname "$profile")"
+  if [ ! -f "$profile" ] || ! grep -F "$path_line" "$profile" >/dev/null 2>&1; then
+    printf '\n%s\n%s\n' '# Added by the UniDrop installer' "$path_line" >> "$profile"
+  fi
+  say "added $cli_dir to your shell PATH (new terminals will see it)"
+}
 
 OS_NAME=$(uname -s)
 case "$OS_NAME" in
@@ -109,7 +132,7 @@ install_macos() {
 
   mkdir -p "$contents/MacOS" "$launch_agents" "$cli_dir"
   build_binary "$binary"
-  cat > "$contents/Info.plist" <<'PLIST'
+  cat > "$contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -118,7 +141,7 @@ install_macos() {
   <key>CFBundleIdentifier</key><string>com.unidrop.app</string>
   <key>CFBundleName</key><string>UniDrop</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleShortVersionString</key><string>$APP_VERSION</string>
   <key>LSUIElement</key><true/>
 </dict></plist>
 PLIST
@@ -136,6 +159,7 @@ PLIST
 </dict></plist>
 PLIST
   ln -sf "$binary" "$cli_dir/unidrop"
+  ensure_cli_path "$cli_dir"
   if [ "$NO_START" != "1" ]; then
     launchctl bootout "gui/$(id -u)/com.unidrop.app" >/dev/null 2>&1 || :
     launchctl bootstrap "gui/$(id -u)" "$plist"
@@ -155,6 +179,7 @@ install_linux() {
   autostart_dir="${XDG_CONFIG_HOME:-$INSTALL_HOME/.config}/autostart"
   mkdir -p "$binary_dir" "$apps_dir" "$autostart_dir"
   build_binary "$binary"
+  ensure_cli_path "$binary_dir"
 
   cat > "$apps_dir/unidrop.desktop" <<DESKTOP
 [Desktop Entry]

@@ -4,13 +4,17 @@ UniDrop is a working cross-platform local file sender for macOS, Linux, and Wind
 
 The application core and responsive control panel are intentionally contained in [`main.go`](main.go). It uses only the Go standard library: no npm tree, Electron runtime, PHP server, database, or third-party Go module is installed.
 
-## What works in v0.1
+## What works in v0.2
 
 - macOS, Linux, and Windows binaries from one source file
 - automatic peer discovery on the same LAN using local multicast
 - manual IP address fallback when a network blocks multicast
 - mutual pairing with a 64-bit one-time key
 - TLS 1.3, certificate pinning, 256-bit bearer tokens, and pairing rate limits
+- receiver approval cards showing sender, filename, and size before any file bytes are accepted
+- three receive modes: **Ask every time**, **Trusted devices**, and **Receiving off**
+- a local command bridge: `unidrop send photo.jpg minibrain.local`
+- friendly `.local` aliases derived from nearby UniDrop device names
 - multiple-file drag and drop with browser upload progress
 - streamed transfers instead of loading whole files into memory
 - safe filenames, unique receive names, partial-file cleanup, and a 20 GiB per-file limit
@@ -51,9 +55,40 @@ Go 1.26.5 is intentionally pinned because it is the current July 2026 security r
 2. Choose the nearby device on the sender.
 3. Copy the one-time pairing key shown by the receiver into the sender.
 4. Drop one or more files and press **Send**.
-5. The receiver finds them in `Downloads/UniDrop`.
+5. The receiver reviews the filename, size, and paired sender, then presses **Accept** or **Decline**.
+6. Accepted files appear in `Downloads/UniDrop`.
 
 The first launch may trigger an operating-system firewall prompt. Allow private/local network access. If the other computer does not appear, enter its LAN address in the manual field, for example `192.168.1.20:43338`.
+
+### Send from the command line
+
+The installer adds the `unidrop` command to your user PATH. Open a new terminal after the first install so the shell sees it.
+
+List nearby devices and their command names:
+
+```sh
+unidrop peers
+```
+
+Send a file using the nearby computer's UniDrop name:
+
+```sh
+unidrop send /path/to/photo.jpg minibrain.local
+```
+
+Send several files, especially when the device name contains spaces:
+
+```sh
+unidrop send --to mini-brain.local photo.jpg notes.pdf
+```
+
+The background UniDrop service must be running and the devices must already be paired. The `.local` value is a friendly UniDrop discovery alias, so it works even when the operating system has not registered that exact mDNS hostname. A real hostname or `host:port` is also accepted as a fallback. The command waits for the receiver's decision and reports a clear declined, expired, or completed result.
+
+Incoming behavior is controlled from the receiver panel:
+
+- **Ask every time** is the safe default and displays an approval card.
+- **Trusted devices** automatically accepts files from already-paired machines.
+- **Receiving off** declines new offers until receiving is enabled again.
 
 ## Platform behavior
 
@@ -61,9 +96,9 @@ The first launch may trigger an operating-system firewall prompt. Allow private/
 |---|---|---|---|
 | macOS | `~/Applications/UniDrop.app` plus a LaunchAgent | `~/Downloads/UniDrop` | Background app with no Dock icon; browser control panel; native notification |
 | Linux | application-menu entry plus systemd user service or XDG autostart | `~/Downloads/UniDrop` | Browser control panel; `notify-send` when available |
-| Windows | Start-menu and Startup shortcuts | `%USERPROFILE%\Downloads\UniDrop` | Browser control panel; private-network firewall prompt may appear |
+| Windows | Start-menu and Startup shortcuts; command added to user PATH | `%USERPROFILE%\Downloads\UniDrop` | Browser control panel; private-network firewall prompt may appear |
 
-A true native menu-bar/system-tray adapter is the next shell layer. The network and security core is already independent of it. Native tray APIs are different on every target—AppKit on macOS, AppIndicator/StatusNotifier on Linux, and Shell_NotifyIcon on Windows—and Linux has no single universal tray API. Keeping that adapter separate preserves the dependency-free, easily cross-compiled core.
+A true native menu-bar/system-tray adapter is the next shell layer. It will expose nearby-device count, pending approvals, receive mode, recent transfers, **Open UniDrop**, and **Quit**. The network and security core is already independent of it. Native tray APIs are different on every target—AppKit on macOS, AppIndicator/StatusNotifier on Linux, and Shell_NotifyIcon on Windows—and Linux has no single universal tray API. Keeping that adapter separate preserves the dependency-free, easily cross-compiled core.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the OS breakdown and [SECURITY.md](SECURITY.md) for the threat model and remaining hardening work.
 
@@ -93,3 +128,5 @@ The release builder also writes `dist/SHA256SUMS`, which both installers verify 
 - `239.255.77.77:43339/udp`: local multicast discovery
 
 UniDrop is currently for devices on the same local IP network. It does not open router ports, use UPnP, or provide an internet relay.
+
+Protocol v2 is used by UniDrop v0.2. Upgrade both computers together; v0.1 peers are intentionally ignored because v0.1 did not negotiate receiver approval before sending bytes.
