@@ -33,7 +33,7 @@ UniDrop must remain local-first:
   exist.
 - [x] CLI supports peer listing, file sending, starting, and stopping.
 - [x] A dark responsive landing page exists under `site/`.
-- [ ] The landing page is committed to the public repository.
+- [x] The landing page is committed to the public repository.
 - [ ] The project has an explicit open-source license.
 - [ ] GitHub Releases contain native installers and checksums.
 - [x] Automated cross-platform CI and release workflows exist.
@@ -60,13 +60,13 @@ pay. Do not weaken the free local product merely to force conversion.
 Every completed engineering task must satisfy the applicable items below:
 
 - [x] Code is formatted and passes `git diff --check`.
-- [ ] Unit, integration, race, and platform-specific tests pass where applicable.
+- [x] Unit, integration, race, and platform-specific tests pass where applicable.
 - [ ] Security-sensitive behavior has negative and abuse-case tests.
 - [x] Dependencies and downloaded tools have pinned versions, integrity checks,
   license review, and CVE/advisory review recorded in the repository.
 - [x] User-facing behavior and troubleshooting steps are documented.
-- [ ] Upgrade, rollback, and uninstall behavior preserve user data as documented.
-- [ ] No secrets, signing credentials, production tokens, or customer information
+- [x] Upgrade, rollback, and uninstall behavior preserve user data as documented.
+- [x] No secrets, signing credentials, production tokens, or customer information
   appear in source, logs, fixtures, artifacts, or CI output.
 - [x] macOS ARM64/AMD64, Windows ARM64/AMD64, and Linux ARM64/AMD64 are either
   verified or explicitly blocked from release.
@@ -83,7 +83,7 @@ download, install, verify, update, and remove.
 
 ## 1.1 Repository, license, and brand foundation
 
-- [ ] Commit the complete `site/` directory without overwriting unrelated work.
+- [x] Commit the complete `site/` directory without overwriting unrelated work.
 - [ ] Choose the client license with owner approval and legal review when needed.
   Apache-2.0 is the initial recommendation because it is permissive and includes
   an explicit patent grant; this is a decision, not an automatic selection.
@@ -93,7 +93,7 @@ download, install, verify, update, and remove.
   impersonating distributions, if that is the owner's chosen trademark policy.
 - [ ] Search relevant trademark records and domain availability before spending
   materially on the brand.
-- [ ] Add a public project contact, private security-reporting address, Code of
+- [x] Add a public project contact, private security-reporting address, Code of
   Conduct, contributing guide, issue templates, and pull-request template.
 - [ ] Configure the GitHub repository homepage to point to the production landing
   page.
@@ -194,7 +194,7 @@ download, install, verify, update, and remove.
 
 ## Phase 1 tests
 
-- [ ] CI is green on supported OS/architecture matrices.
+- [x] CI is green on supported OS/architecture matrices.
 - [ ] Every release asset matches its published checksum and attestation.
 - [ ] Clean machines install, launch, discover, pair, send, receive, update,
   downgrade-reject, and uninstall successfully.
