@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	appversion "unidrop/internal/version"
+	appversion "xendfile/internal/version"
 )
 
 func TestSanitizeFilename(t *testing.T) {
@@ -65,6 +65,9 @@ func TestOldestSupportedProtocolContract(t *testing.T) {
 	if protocolVersion != 2 || appversion.MinimumCompatibleVersion != "0.2.0" {
 		t.Fatalf("unexpected compatibility floor: protocol=%d version=%q", protocolVersion, appversion.MinimumCompatibleVersion)
 	}
+	if legacyUIHeader != "X-UniDrop-UI" || legacySenderID != "X-UniDrop-Sender-ID" || legacyPairDomain != "unidrop-pair-v1" {
+		t.Fatal("the v0.3 wire identifiers changed during the Xendfile rename")
+	}
 	a := testApp(t, t.TempDir(), "Compatibility Peer")
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/info", nil)
 	response := httptest.NewRecorder()
@@ -82,6 +85,25 @@ func TestOldestSupportedProtocolContract(t *testing.T) {
 	}
 	if info.Protocol != 2 || info.Version != appversion.Current || info.MinimumCompatibleVersion != "0.2.0" {
 		t.Fatalf("unexpected public compatibility metadata: %+v", info)
+	}
+}
+
+func TestLegacyEnvironmentOverridesRemainCompatible(t *testing.T) {
+	legacyConfig := filepath.Join(t.TempDir(), "legacy-config")
+	t.Setenv("XENDFILE_CONFIG_DIR", "")
+	t.Setenv("UNIDROP_CONFIG_DIR", legacyConfig)
+	got, err := configDirectory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != legacyConfig {
+		t.Fatalf("legacy config override = %q, want %q", got, legacyConfig)
+	}
+
+	currentConfig := filepath.Join(t.TempDir(), "current-config")
+	t.Setenv("XENDFILE_CONFIG_DIR", currentConfig)
+	if got, err = configDirectory(); err != nil || got != currentConfig {
+		t.Fatalf("current config override = %q, %v; want %q", got, err, currentConfig)
 	}
 }
 
@@ -109,7 +131,7 @@ func TestPairAndTransferEndToEnd(t *testing.T) {
 		t.Fatal("pairing should establish mutual trust")
 	}
 
-	payload := []byte("hello securely from UniDrop\n")
+	payload := []byte("hello securely from Xendfile\n")
 	request := httptest.NewRequest(http.MethodPost, "/api/send?peer="+b.identity.ID+"&filename=../hello.txt", bytes.NewReader(payload))
 	request.Host = "127.0.0.1:43337"
 	request.Header.Set("X-UniDrop-UI", "1")
@@ -694,24 +716,24 @@ func testApp(t *testing.T, root, name string) *App {
 	t.Helper()
 	config := filepath.Join(root, "config")
 	downloads := filepath.Join(root, "downloads")
-	oldConfig, hadConfig := os.LookupEnv("UNIDROP_CONFIG_DIR")
-	oldDownloads, hadDownloads := os.LookupEnv("UNIDROP_DOWNLOAD_DIR")
-	if err := os.Setenv("UNIDROP_CONFIG_DIR", config); err != nil {
+	oldConfig, hadConfig := os.LookupEnv("XENDFILE_CONFIG_DIR")
+	oldDownloads, hadDownloads := os.LookupEnv("XENDFILE_DOWNLOAD_DIR")
+	if err := os.Setenv("XENDFILE_CONFIG_DIR", config); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Setenv("UNIDROP_DOWNLOAD_DIR", downloads); err != nil {
+	if err := os.Setenv("XENDFILE_DOWNLOAD_DIR", downloads); err != nil {
 		t.Fatal(err)
 	}
 	a, err := newApp("127.0.0.1:0")
 	if hadConfig {
-		_ = os.Setenv("UNIDROP_CONFIG_DIR", oldConfig)
+		_ = os.Setenv("XENDFILE_CONFIG_DIR", oldConfig)
 	} else {
-		_ = os.Unsetenv("UNIDROP_CONFIG_DIR")
+		_ = os.Unsetenv("XENDFILE_CONFIG_DIR")
 	}
 	if hadDownloads {
-		_ = os.Setenv("UNIDROP_DOWNLOAD_DIR", oldDownloads)
+		_ = os.Setenv("XENDFILE_DOWNLOAD_DIR", oldDownloads)
 	} else {
-		_ = os.Unsetenv("UNIDROP_DOWNLOAD_DIR")
+		_ = os.Unsetenv("XENDFILE_DOWNLOAD_DIR")
 	}
 	if err != nil {
 		t.Fatal(err)

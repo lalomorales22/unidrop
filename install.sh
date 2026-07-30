@@ -1,5 +1,5 @@
 #!/bin/sh
-# UniDrop installer for macOS and Linux.
+# Xendfile installer for macOS and Linux.
 # It installs per-user, needs no sudo, and never downloads third-party modules.
 set -eu
 
@@ -7,13 +7,17 @@ GO_VERSION="1.26.5"
 MIN_GO_VERSION="1.25.0"
 SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
 APP_VERSION=$(tr -d '\r\n' < "$SCRIPT_DIR/internal/version/VERSION")
-TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/unidrop-install.XXXXXX")
-INSTALL_HOME=${UNIDROP_INSTALL_HOME:-$HOME}
-NO_START=${UNIDROP_NO_START:-0}
+TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/xendfile-install.XXXXXX")
+INSTALL_HOME=${XENDFILE_INSTALL_HOME:-${UNIDROP_INSTALL_HOME:-$HOME}}
+NO_START=${XENDFILE_NO_START:-${UNIDROP_NO_START:-0}}
 trap 'rm -rf "$TEMP_DIR"' EXIT HUP INT TERM
 
-say() { printf '%s\n' "UniDrop: $*"; }
-fail() { printf '%s\n' "UniDrop installer error: $*" >&2; exit 1; }
+say() { printf '%s\n' "Xendfile: $*"; }
+fail() { printf '%s\n' "Xendfile installer error: $*" >&2; exit 1; }
+
+case "$INSTALL_HOME" in
+  ""|/) fail "refusing an unsafe install home" ;;
+esac
 
 ensure_cli_path() {
   cli_dir=$1
@@ -33,7 +37,7 @@ ensure_cli_path() {
   fi
   mkdir -p "$(dirname "$profile")"
   if [ ! -f "$profile" ] || ! grep -F "$path_line" "$profile" >/dev/null 2>&1; then
-    printf '\n%s\n%s\n' '# Added by the UniDrop installer' "$path_line" >> "$profile"
+    printf '\n%s\n%s\n' '# Added by the Xendfile installer' "$path_line" >> "$profile"
   fi
   say "added $cli_dir to your shell PATH (new terminals will see it)"
 }
@@ -124,7 +128,7 @@ prepare_go() {
 
 build_binary() {
   output=$1
-  bundled="$SCRIPT_DIR/dist/unidrop-$TARGET_OS-$TARGET_ARCH"
+  bundled="$SCRIPT_DIR/dist/xendfile-$TARGET_OS-$TARGET_ARCH"
   if [ -f "$bundled" ]; then
     say "using bundled $TARGET_OS/$TARGET_ARCH binary"
     manifest="$SCRIPT_DIR/dist/SHA256SUMS"
@@ -144,7 +148,7 @@ build_binary() {
 
   prepare_go
 
-  say "building UniDrop $APP_VERSION (standard library only)"
+  say "building Xendfile $APP_VERSION (standard library only)"
   (cd "$SCRIPT_DIR" && CGO_ENABLED=0 GOOS="$TARGET_OS" GOARCH="$TARGET_ARCH" "$GO_CMD" build \
     -mod=vendor -trimpath -ldflags="-s -w -X main.appVersion=$APP_VERSION" -o "$output" .)
   chmod 755 "$output"
@@ -152,26 +156,18 @@ build_binary() {
 
 build_linux_tray() {
   output=$1
-  [ -f "$SCRIPT_DIR/cmd/unidrop-tray/main.go" ] || fail "Linux tray source is missing"
+  [ -f "$SCRIPT_DIR/cmd/xendfile-tray/main.go" ] || fail "Linux tray source is missing"
   [ -d "$SCRIPT_DIR/vendor/github.com/godbus/dbus/v5" ] || fail "vendored Linux D-Bus source is missing"
   prepare_go
   say "building the native Linux AppIndicator tray"
   (cd "$SCRIPT_DIR" && CGO_ENABLED=0 GOOS=linux GOARCH="$TARGET_ARCH" "$GO_CMD" build \
-    -mod=vendor -trimpath -ldflags="-s -w -X main.appVersion=$APP_VERSION" -o "$output" ./cmd/unidrop-tray)
+    -mod=vendor -trimpath -ldflags="-s -w -X main.appVersion=$APP_VERSION" -o "$output" ./cmd/xendfile-tray)
   chmod 755 "$output"
 }
 
 build_macos_menu() {
   output=$1
-  portable="$SCRIPT_DIR/macos/UniDropMenu.universal"
-  if [ -f "$portable" ]; then
-    say "using the verified universal macOS menu-bar shell"
-    verify_sha256 'd403bd6a4d8bd0dc91619223cae7dac4902e5bbea3f4449db7c0541ea966bede' "$portable"
-    cp "$portable" "$output"
-    chmod 755 "$output"
-    return
-  fi
-  bundled="$SCRIPT_DIR/dist/unidrop-menu-darwin-$TARGET_ARCH"
+  bundled="$SCRIPT_DIR/dist/xendfile-menu-darwin-$TARGET_ARCH"
   if [ -f "$bundled" ]; then
     say "using bundled macOS menu-bar shell"
     manifest="$SCRIPT_DIR/dist/SHA256SUMS"
@@ -182,9 +178,9 @@ build_macos_menu() {
     fi
     cp "$bundled" "$output"
   else
-    [ -f "$SCRIPT_DIR/macos/UniDropMenu.swift" ] || fail "macOS menu-bar source is missing"
+    [ -f "$SCRIPT_DIR/macos/XendfileMenu.swift" ] || fail "macOS menu-bar source is missing"
     command -v xcrun >/dev/null 2>&1 && xcrun --find swiftc >/dev/null 2>&1 || \
-      fail "the source installer needs Apple's Swift compiler; run xcode-select --install or use a bundled UniDrop release"
+      fail "the source installer needs Apple's Swift compiler; run xcode-select --install or use a bundled Xendfile release"
     say "building the native macOS menu-bar shell"
     case "$TARGET_ARCH" in
       amd64) swift_arch="x86_64" ;;
@@ -192,38 +188,46 @@ build_macos_menu() {
     esac
     target="$swift_arch-apple-macosx13.0"
     xcrun swiftc -swift-version 5 -O -whole-module-optimization -target "$target" \
-      -framework AppKit -framework WebKit "$SCRIPT_DIR/macos/UniDropMenu.swift" -o "$output"
+      -framework AppKit -framework WebKit "$SCRIPT_DIR/macos/XendfileMenu.swift" -o "$output"
   fi
   chmod 755 "$output"
 }
 
 install_macos() {
-  app_dir="$INSTALL_HOME/Applications/UniDrop.app"
+  app_dir="$INSTALL_HOME/Applications/Xendfile.app"
   contents="$app_dir/Contents"
-  binary="$contents/Resources/unidrop-core"
-  menu_binary="$contents/MacOS/UniDrop"
+  binary="$contents/Resources/xendfile-core"
+  menu_binary="$contents/MacOS/Xendfile"
   launch_agents="$INSTALL_HOME/Library/LaunchAgents"
-  plist="$launch_agents/com.unidrop.app.plist"
+  plist="$launch_agents/io.github.lalomorales22.xendfile.plist"
   cli_dir="$INSTALL_HOME/.local/bin"
 
+  # Remove only the former product's installed launch files and binaries. Its
+  # Application Support directory is intentionally retained for identity and
+  # pairing compatibility.
+  launchctl bootout "gui/$(id -u)/com.unidrop.app" >/dev/null 2>&1 || :
+  rm -f "$launch_agents/com.unidrop.app.plist" "$cli_dir/unidrop"
+  rm -rf "$INSTALL_HOME/Applications/UniDrop.app"
+
   mkdir -p "$contents/MacOS" "$contents/Resources" "$launch_agents" "$cli_dir"
-  rm -f "$contents/MacOS/unidrop"
+  rm -f "$contents/MacOS/xendfile"
   build_binary "$binary"
   build_macos_menu "$menu_binary"
+  cp "$SCRIPT_DIR/LICENSE" "$SCRIPT_DIR/NOTICE" "$SCRIPT_DIR/THIRD_PARTY_NOTICES.md" "$contents/Resources/"
   cat > "$contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>CFBundleDisplayName</key><string>UniDrop</string>
-  <key>CFBundleExecutable</key><string>UniDrop</string>
-  <key>CFBundleIdentifier</key><string>com.unidrop.app</string>
-  <key>CFBundleName</key><string>UniDrop</string>
+  <key>CFBundleDisplayName</key><string>Xendfile</string>
+  <key>CFBundleExecutable</key><string>Xendfile</string>
+  <key>CFBundleIdentifier</key><string>io.github.lalomorales22.xendfile</string>
+  <key>CFBundleName</key><string>Xendfile</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$APP_VERSION</string>
   <key>CFBundleVersion</key><string>$APP_VERSION</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
-  <key>NSLocalNetworkUsageDescription</key><string>UniDrop searches for your nearby computers and sends files directly over your local network.</string>
+  <key>NSLocalNetworkUsageDescription</key><string>Xendfile searches for your nearby computers and sends files directly over your local network.</string>
   <key>NSBonjourServices</key><array><string>_unidrop._tcp</string></array>
   <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict></plist>
@@ -232,54 +236,71 @@ PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>com.unidrop.app</string>
+  <key>Label</key><string>io.github.lalomorales22.xendfile</string>
   <key>ProgramArguments</key><array><string>$menu_binary</string></array>
-  <key>AssociatedBundleIdentifiers</key><array><string>com.unidrop.app</string></array>
+  <key>AssociatedBundleIdentifiers</key><array><string>io.github.lalomorales22.xendfile</string></array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ProcessType</key><string>Interactive</string>
-  <key>StandardOutPath</key><string>$INSTALL_HOME/Library/Logs/UniDrop.log</string>
-  <key>StandardErrorPath</key><string>$INSTALL_HOME/Library/Logs/UniDrop.log</string>
+  <key>StandardOutPath</key><string>$INSTALL_HOME/Library/Logs/Xendfile.log</string>
+  <key>StandardErrorPath</key><string>$INSTALL_HOME/Library/Logs/Xendfile.log</string>
 </dict></plist>
 PLIST
-  ln -sf "$binary" "$cli_dir/unidrop"
+  ln -sf "$binary" "$cli_dir/xendfile"
   ensure_cli_path "$cli_dir"
   if command -v codesign >/dev/null 2>&1; then
     codesign --force --deep --sign - "$app_dir" >/dev/null
   fi
   if [ "$NO_START" != "1" ]; then
-    launchctl bootout "gui/$(id -u)/com.unidrop.app" >/dev/null 2>&1 || :
-    launchctl enable "gui/$(id -u)/com.unidrop.app" >/dev/null 2>&1 || :
+    launchctl bootout "gui/$(id -u)/io.github.lalomorales22.xendfile" >/dev/null 2>&1 || :
+    launchctl enable "gui/$(id -u)/io.github.lalomorales22.xendfile" >/dev/null 2>&1 || :
     launchctl bootstrap "gui/$(id -u)" "$plist"
   fi
   say "installed $app_dir"
   if [ "$NO_START" = "1" ]; then
     say "startup files installed; automatic start was skipped"
   else
-    say "UniDrop is running in your menu bar. Click the ⇅ icon to open it."
+    say "Xendfile is running in your menu bar. Click the ⇅ icon to open it."
   fi
 }
 
 install_linux() {
   binary_dir="$INSTALL_HOME/.local/bin"
-  binary="$binary_dir/unidrop"
-  tray_binary="$binary_dir/unidrop-tray"
+  binary="$binary_dir/xendfile"
+  tray_binary="$binary_dir/xendfile-tray"
   apps_dir="${XDG_DATA_HOME:-$INSTALL_HOME/.local/share}/applications"
   icons_dir="${XDG_DATA_HOME:-$INSTALL_HOME/.local/share}/icons/hicolor/scalable/apps"
+  docs_dir="${XDG_DATA_HOME:-$INSTALL_HOME/.local/share}/doc/xendfile"
   autostart_dir="${XDG_CONFIG_HOME:-$INSTALL_HOME/.config}/autostart"
-  mkdir -p "$binary_dir" "$apps_dir" "$icons_dir" "$autostart_dir"
+  legacy_unit_dir="${XDG_CONFIG_HOME:-$INSTALL_HOME/.config}/systemd/user"
+  if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
+    systemctl --user disable --now unidrop-tray.service unidrop.service >/dev/null 2>&1 || :
+  fi
+  command -v pkill >/dev/null 2>&1 && pkill -TERM -x unidrop-tray >/dev/null 2>&1 || :
+  command -v pkill >/dev/null 2>&1 && pkill -TERM -x unidrop >/dev/null 2>&1 || :
+  rm -f \
+    "$binary_dir/unidrop" \
+    "$binary_dir/unidrop-tray" \
+    "${XDG_DATA_HOME:-$INSTALL_HOME/.local/share}/applications/unidrop.desktop" \
+    "${XDG_DATA_HOME:-$INSTALL_HOME/.local/share}/icons/hicolor/scalable/apps/unidrop.svg" \
+    "$autostart_dir/unidrop.desktop" \
+    "$autostart_dir/unidrop-tray.desktop" \
+    "$legacy_unit_dir/unidrop.service" \
+    "$legacy_unit_dir/unidrop-tray.service"
+  mkdir -p "$binary_dir" "$apps_dir" "$icons_dir" "$docs_dir" "$autostart_dir"
   build_binary "$binary"
   build_linux_tray "$tray_binary"
   ensure_cli_path "$binary_dir"
-  cp "$SCRIPT_DIR/linux/unidrop.svg" "$icons_dir/unidrop.svg"
+  cp "$SCRIPT_DIR/linux/xendfile.svg" "$icons_dir/xendfile.svg"
+  cp "$SCRIPT_DIR/LICENSE" "$SCRIPT_DIR/NOTICE" "$SCRIPT_DIR/THIRD_PARTY_NOTICES.md" "$docs_dir/"
 
-  cat > "$apps_dir/unidrop.desktop" <<DESKTOP
+  cat > "$apps_dir/xendfile.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
-Name=UniDrop
+Name=Xendfile
 Comment=Secure local file sharing
 Exec=$binary --open
-Icon=unidrop
+Icon=xendfile
 Terminal=false
 Categories=Network;FileTransfer;
 DESKTOP
@@ -287,9 +308,9 @@ DESKTOP
   if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
     unit_dir="${XDG_CONFIG_HOME:-$INSTALL_HOME/.config}/systemd/user"
     mkdir -p "$unit_dir"
-    cat > "$unit_dir/unidrop.service" <<UNIT
+    cat > "$unit_dir/xendfile.service" <<UNIT
 [Unit]
-Description=UniDrop secure local file sharing
+Description=Xendfile secure local file sharing
 After=network-online.target
 
 [Service]
@@ -300,11 +321,11 @@ RestartSec=3
 [Install]
 WantedBy=default.target
 UNIT
-    cat > "$unit_dir/unidrop-tray.service" <<UNIT
+    cat > "$unit_dir/xendfile-tray.service" <<UNIT
 [Unit]
-Description=UniDrop Linux tray indicator
-After=unidrop.service graphical-session.target
-Requires=unidrop.service
+Description=Xendfile Linux tray indicator
+After=xendfile.service graphical-session.target
+Requires=xendfile.service
 
 [Service]
 ExecStart=$tray_binary
@@ -316,35 +337,35 @@ WantedBy=default.target
 UNIT
     if [ "$NO_START" != "1" ]; then
       systemctl --user daemon-reload
-      systemctl --user enable unidrop.service unidrop-tray.service
-      systemctl --user restart unidrop.service
-      systemctl --user restart unidrop-tray.service
+      systemctl --user enable xendfile.service xendfile-tray.service
+      systemctl --user restart xendfile.service
+      systemctl --user restart xendfile-tray.service
     fi
   else
-    cat > "$autostart_dir/unidrop.desktop" <<DESKTOP
+    cat > "$autostart_dir/xendfile.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
-Name=UniDrop background service
+Name=Xendfile background service
 Exec=$binary --no-open
 Terminal=false
 X-GNOME-Autostart-enabled=true
 DESKTOP
-    cat > "$autostart_dir/unidrop-tray.desktop" <<DESKTOP
+    cat > "$autostart_dir/xendfile-tray.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
-Name=UniDrop tray indicator
+Name=Xendfile tray indicator
 Exec=$tray_binary
 Terminal=false
 X-GNOME-Autostart-enabled=true
 DESKTOP
     if [ "$NO_START" != "1" ]; then
       "$binary" stop >/dev/null 2>&1 || {
-        command -v pkill >/dev/null 2>&1 && pkill -TERM -x unidrop >/dev/null 2>&1 || :
+        command -v pkill >/dev/null 2>&1 && pkill -TERM -x xendfile >/dev/null 2>&1 || :
       }
-      command -v pkill >/dev/null 2>&1 && pkill -TERM -x unidrop-tray >/dev/null 2>&1 || :
+      command -v pkill >/dev/null 2>&1 && pkill -TERM -x xendfile-tray >/dev/null 2>&1 || :
       if command -v pgrep >/dev/null 2>&1; then
         wait_count=0
-        while pgrep -x unidrop >/dev/null 2>&1 && [ "$wait_count" -lt 5 ]; do
+        while pgrep -x xendfile >/dev/null 2>&1 && [ "$wait_count" -lt 5 ]; do
           sleep 1
           wait_count=$((wait_count + 1))
         done
@@ -357,7 +378,7 @@ DESKTOP
   if [ "$NO_START" = "1" ]; then
     say "startup files installed; automatic start was skipped"
   else
-    say "UniDrop's Linux tray indicator is running. Click its icon or open UniDrop from the application menu."
+    say "Xendfile's Linux tray indicator is running. Click its icon or open Xendfile from the application menu."
     say "If your desktop hides StatusNotifier/AppIndicator icons, the application-menu browser panel remains available."
   fi
 }

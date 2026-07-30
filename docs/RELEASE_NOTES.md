@@ -1,8 +1,8 @@
-# UniDrop release notes
+# Xendfile release notes
 
 ## v0.3.3 source alpha
 
-UniDrop v0.3.3 is a source-based alpha for direct same-LAN file transfer across
+Xendfile v0.3.3 is a source-based alpha for direct same-LAN file transfer across
 macOS, Windows, and Linux. The website currently links to the immutable reviewed
 source snapshot at commit `7f7e82be35f3f712e2342958966712156840ab05`, not to a
 signed native release.
@@ -45,21 +45,22 @@ SHA-256: f7b16974ced047a6553fc2c0ec15f5837846fd7df4a5a709594c4c91c2fbb34d
 After downloading, compare the locally computed SHA-256 before extracting it:
 
 ```sh
-shasum -a 256 unidrop-7f7e82be35f3f712e2342958966712156840ab05.zip
+shasum -a 256 xendfile-7f7e82be35f3f712e2342958966712156840ab05.zip
 ```
 
 PowerShell:
 
 ```powershell
-Get-FileHash -Algorithm SHA256 .\unidrop-7f7e82be35f3f712e2342958966712156840ab05.zip
+Get-FileHash -Algorithm SHA256 .\xendfile-7f7e82be35f3f712e2342958966712156840ab05.zip
 ```
 
 The hash proves that the bytes match the documented snapshot. It does not prove
-publisher identity because this alpha archive has no UniDrop signature.
+publisher identity because this alpha archive has no Xendfile signature.
 
 ## v0.4.0 trust and distribution work
 
-The next release remains gated on owner-approved licensing and branding, real
-Apple and Windows signing identities, notarization/package trust, clean-machine
-tests, signed immutable release metadata, and public-site approval. The active,
-evidence-backed status is maintained in [`tasks.md`](../tasks.md).
+Apache-2.0 licensing and the Xendfile brand decision are now recorded. The next
+release remains gated on Apple and Windows signing identities,
+notarization/package trust, clean-machine tests, signed immutable release
+metadata, and public-site approval. The active, evidence-backed status is
+maintained in [`tasks.md`](../tasks.md).

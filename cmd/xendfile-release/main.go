@@ -1,4 +1,4 @@
-// UniDrop release signs and verifies release manifests with Ed25519 using only
+// Xendfile release signs and verifies release manifests with Ed25519 using only
 // the Go standard library. Private keys are never accepted through arguments or
 // environment variables; callers pass a path to a user-protected key file.
 package main
@@ -29,7 +29,7 @@ type signatureEnvelope struct {
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "unidrop-release:", err)
+		fmt.Fprintln(os.Stderr, "xendfile-release:", err)
 		os.Exit(1)
 	}
 }

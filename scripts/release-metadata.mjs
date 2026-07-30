@@ -29,18 +29,18 @@ async function releaseFiles() {
 }
 
 function componentFor(name) {
-  let match = name.match(/^unidrop-(darwin|linux|windows)-(amd64|arm64)(?:\.exe)?$/);
+  let match = name.match(/^xendfile-(darwin|linux|windows)-(amd64|arm64)(?:\.exe)?$/);
   if (match) return { component: "core", platform: match[1], architecture: match[2] };
-  match = name.match(/^unidrop-tray-(linux|windows)-(amd64|arm64)(?:\.exe)?$/);
+  match = name.match(/^xendfile-tray-(linux|windows)-(amd64|arm64)(?:\.exe)?$/);
   if (match) return { component: "tray", platform: match[1], architecture: match[2] };
-  match = name.match(/^unidrop-menu-darwin-(amd64|arm64)$/);
+  match = name.match(/^xendfile-menu-darwin-(amd64|arm64)$/);
   if (match) return { component: "menu", platform: "darwin", architecture: match[1] };
-  match = name.match(/^unidrop-update-(darwin|linux|windows)-(amd64|arm64)(?:\.exe)?$/);
+  match = name.match(/^xendfile-update-(darwin|linux|windows)-(amd64|arm64)(?:\.exe)?$/);
   if (match) return { component: "updater", platform: match[1], architecture: match[2] };
-  if (/^unidrop-[0-9]+\.[0-9]+\.[0-9]+-macos-universal\.dmg$/.test(name)) {
+  if (/^xendfile-[0-9]+\.[0-9]+\.[0-9]+-macos-universal\.dmg$/.test(name)) {
     return { component: "package", platform: "darwin", architecture: "universal" };
   }
-  match = name.match(/^unidrop-[0-9]+\.[0-9]+\.[0-9]+-linux-(amd64|arm64)\.AppImage$/);
+  match = name.match(/^xendfile-[0-9]+\.[0-9]+\.[0-9]+-linux-(amd64|arm64)\.AppImage$/);
   if (match) return { component: "package", platform: "linux", architecture: match[1] };
   if (name.endsWith(".spdx.json")) return { component: "sbom", platform: "all", architecture: "all" };
   return { component: "release-metadata", platform: "all", architecture: "all" };
@@ -67,15 +67,15 @@ const protocol = Number(await textFile("PROTOCOL"));
 const minimumCompatibleVersion = await textFile("MIN_COMPATIBLE_VERSION");
 const repository = process.env.GITHUB_REPOSITORY || "lalomorales22/unidrop";
 const tag = `v${version}`;
-const releaseBaseURL = process.env.UNIDROP_RELEASE_BASE_URL ||
+const releaseBaseURL = process.env.XENDFILE_RELEASE_BASE_URL ||
   `https://github.com/${repository}/releases/download/${tag}`;
 const commit = process.env.GITHUB_SHA || gitValue("rev-parse", "HEAD");
 const commitDate = process.env.SOURCE_DATE_EPOCH
   ? new Date(Number(process.env.SOURCE_DATE_EPOCH) * 1000).toISOString()
   : new Date(gitValue("show", "-s", "--format=%cI", "HEAD")).toISOString();
 const expiresAt = new Date(new Date(commitDate).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
-const sbomName = `unidrop-${version}.spdx.json`;
-const manifestName = `unidrop-${version}-manifest.json`;
+const sbomName = `xendfile-${version}.spdx.json`;
+const manifestName = `xendfile-${version}-manifest.json`;
 
 await rm(join(dist, sbomName), { force: true });
 await rm(join(dist, manifestName), { force: true });
@@ -97,22 +97,22 @@ const sbom = {
   spdxVersion: "SPDX-2.3",
   dataLicense: "CC0-1.0",
   SPDXID: "SPDXRef-DOCUMENT",
-  name: `UniDrop ${version} release SBOM`,
+  name: `Xendfile ${version} release SBOM`,
   documentNamespace: `https://github.com/${repository}/releases/tag/${tag}/sbom/${commit}`,
   creationInfo: {
     created: commitDate,
-    creators: ["Tool: UniDrop dependency-free release-metadata.mjs"]
+    creators: ["Tool: Xendfile dependency-free release-metadata.mjs"]
   },
   packages: [
     {
-      name: "UniDrop",
-      SPDXID: "SPDXRef-Package-UniDrop",
+      name: "Xendfile",
+      SPDXID: "SPDXRef-Package-Xendfile",
       versionInfo: version,
       downloadLocation: `https://github.com/${repository}/tree/${commit}`,
       filesAnalyzed: false,
-      licenseConcluded: "NOASSERTION",
-      licenseDeclared: "NOASSERTION",
-      copyrightText: "NOASSERTION"
+      licenseConcluded: "Apache-2.0",
+      licenseDeclared: "Apache-2.0",
+      copyrightText: "Copyright 2026 Lalo Adrian Morales"
     },
     {
       name: "github.com/godbus/dbus/v5",
@@ -137,13 +137,13 @@ const sbom = {
   ],
   files: sbomFiles,
   relationships: [
-    { spdxElementId: "SPDXRef-DOCUMENT", relationshipType: "DESCRIBES", relatedSpdxElement: "SPDXRef-Package-UniDrop" },
-    { spdxElementId: "SPDXRef-Package-UniDrop", relationshipType: "DEPENDS_ON", relatedSpdxElement: "SPDXRef-Package-godbus-dbus-v5" },
-    { spdxElementId: "SPDXRef-Package-UniDrop", relationshipType: "DEPENDS_ON", relatedSpdxElement: "SPDXRef-Package-golang-x-sys" },
+    { spdxElementId: "SPDXRef-DOCUMENT", relationshipType: "DESCRIBES", relatedSpdxElement: "SPDXRef-Package-Xendfile" },
+    { spdxElementId: "SPDXRef-Package-Xendfile", relationshipType: "DEPENDS_ON", relatedSpdxElement: "SPDXRef-Package-godbus-dbus-v5" },
+    { spdxElementId: "SPDXRef-Package-Xendfile", relationshipType: "DEPENDS_ON", relatedSpdxElement: "SPDXRef-Package-golang-x-sys" },
     ...sbomFiles.map((file) => ({
       spdxElementId: file.SPDXID,
       relationshipType: "GENERATED_FROM",
-      relatedSpdxElement: "SPDXRef-Package-UniDrop"
+      relatedSpdxElement: "SPDXRef-Package-Xendfile"
     }))
   ]
 };
@@ -165,7 +165,7 @@ for (const file of await releaseFiles()) {
 
 const manifest = {
   schemaVersion: 1,
-  product: "UniDrop",
+  product: "Xendfile",
   version,
   tag,
   sourceCommit: commit,

@@ -102,13 +102,13 @@ jobs:
           cache: false
       - name: Build every desktop target and release metadata
         env:
-          UNIDROP_BUILD_DEVELOPMENT_DMG: "1"
+          XENDFILE_BUILD_DEVELOPMENT_DMG: "1"
         run: ./scripts/build-all.sh
       - name: Verify artifact hashes and metadata
         shell: bash
         run: |
           version=$(tr -d '\r\n' < internal/version/VERSION)
-          test -f "dist/unidrop-$version-macos-universal.dmg"
+          test -f "dist/xendfile-$version-macos-universal.dmg"
           node scripts/verify-release.mjs
 
   linux-appimage:
@@ -139,13 +139,13 @@ jobs:
           TARGET_ARCH: ${{ matrix.go_arch }}
         shell: bash
         run: |
-          tools="$RUNNER_TEMP/unidrop-appimage-tools"
+          tools="$RUNNER_TEMP/xendfile-appimage-tools"
           ./scripts/fetch-appimage-tools.sh "$TARGET_ARCH" "$tools"
           appimagetool=$(find "$tools" -maxdepth 1 -type f -name 'appimagetool-*.AppImage' -print -quit)
           runtime=$(find "$tools" -maxdepth 1 -type f -name 'runtime-*' -print -quit)
           APPIMAGETOOL="$appimagetool" APPIMAGE_RUNTIME="$runtime" ./scripts/build-linux-appimage.sh "$TARGET_ARCH"
           version=$(tr -d '\r\n' < internal/version/VERSION)
-          artifact="dist/unidrop-$version-linux-$TARGET_ARCH.AppImage"
+          artifact="dist/xendfile-$version-linux-$TARGET_ARCH.AppImage"
           first_hash=$(sha256sum "$artifact" | awk '{print $1}')
           APPIMAGETOOL="$appimagetool" APPIMAGE_RUNTIME="$runtime" ./scripts/build-linux-appimage.sh "$TARGET_ARCH"
           second_hash=$(sha256sum "$artifact" | awk '{print $1}')

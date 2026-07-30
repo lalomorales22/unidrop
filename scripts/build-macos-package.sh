@@ -4,7 +4,7 @@ set -eu
 SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
 DIST_DIR="$SCRIPT_DIR/dist"
 VERSION=$(tr -d '\r\n' < "$SCRIPT_DIR/internal/version/VERSION")
-WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/unidrop-macos-package.XXXXXX")
+WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/xendfile-macos-package.XXXXXX")
 MOUNT_DIR="$WORK_DIR/mount"
 MOUNTED=0
 
@@ -22,35 +22,36 @@ for tool in lipo codesign hdiutil plutil; do
 done
 
 required_files="
-$DIST_DIR/unidrop-darwin-amd64
-$DIST_DIR/unidrop-darwin-arm64
-$DIST_DIR/unidrop-menu-darwin-amd64
-$DIST_DIR/unidrop-menu-darwin-arm64
-$DIST_DIR/unidrop-update-darwin-amd64
-$DIST_DIR/unidrop-update-darwin-arm64
+$DIST_DIR/xendfile-darwin-amd64
+$DIST_DIR/xendfile-darwin-arm64
+$DIST_DIR/xendfile-menu-darwin-amd64
+$DIST_DIR/xendfile-menu-darwin-arm64
+$DIST_DIR/xendfile-update-darwin-amd64
+$DIST_DIR/xendfile-update-darwin-arm64
 $SCRIPT_DIR/macos/Info.plist
-$SCRIPT_DIR/macos/UniDrop.entitlements
-$SCRIPT_DIR/macos/UniDrop.icns
+$SCRIPT_DIR/macos/Xendfile.entitlements
+$SCRIPT_DIR/macos/Xendfile.icns
 "
 for required in $required_files; do
   [ -f "$required" ] || { printf '%s\n' "Missing package input: $required" >&2; exit 1; }
 done
 
-APP="$WORK_DIR/UniDrop.app"
+APP="$WORK_DIR/Xendfile.app"
 CONTENTS="$APP/Contents"
 MACOS_DIR="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
 mkdir -p "$MACOS_DIR" "$RESOURCES"
 
-lipo -create "$DIST_DIR/unidrop-menu-darwin-amd64" "$DIST_DIR/unidrop-menu-darwin-arm64" -output "$MACOS_DIR/UniDrop"
-lipo -create "$DIST_DIR/unidrop-darwin-amd64" "$DIST_DIR/unidrop-darwin-arm64" -output "$RESOURCES/unidrop-core"
-lipo -create "$DIST_DIR/unidrop-update-darwin-amd64" "$DIST_DIR/unidrop-update-darwin-arm64" -output "$RESOURCES/unidrop-update"
-chmod 755 "$MACOS_DIR/UniDrop" "$RESOURCES/unidrop-core" "$RESOURCES/unidrop-update"
+lipo -create "$DIST_DIR/xendfile-menu-darwin-amd64" "$DIST_DIR/xendfile-menu-darwin-arm64" -output "$MACOS_DIR/Xendfile"
+lipo -create "$DIST_DIR/xendfile-darwin-amd64" "$DIST_DIR/xendfile-darwin-arm64" -output "$RESOURCES/xendfile-core"
+lipo -create "$DIST_DIR/xendfile-update-darwin-amd64" "$DIST_DIR/xendfile-update-darwin-arm64" -output "$RESOURCES/xendfile-update"
+chmod 755 "$MACOS_DIR/Xendfile" "$RESOURCES/xendfile-core" "$RESOURCES/xendfile-update"
 sed "s/__VERSION__/$VERSION/g" "$SCRIPT_DIR/macos/Info.plist" > "$CONTENTS/Info.plist"
-cp "$SCRIPT_DIR/macos/UniDrop.icns" "$RESOURCES/UniDrop.icns"
+cp "$SCRIPT_DIR/macos/Xendfile.icns" "$RESOURCES/Xendfile.icns"
+cp "$SCRIPT_DIR/LICENSE" "$SCRIPT_DIR/NOTICE" "$SCRIPT_DIR/THIRD_PARTY_NOTICES.md" "$RESOURCES/"
 plutil -lint "$CONTENTS/Info.plist" >/dev/null
 
-for binary in "$MACOS_DIR/UniDrop" "$RESOURCES/unidrop-core" "$RESOURCES/unidrop-update"; do
+for binary in "$MACOS_DIR/Xendfile" "$RESOURCES/xendfile-core" "$RESOURCES/xendfile-update"; do
   architectures=$(lipo -archs "$binary")
   case "$architectures" in
     "x86_64 arm64"|"arm64 x86_64") ;;
@@ -62,31 +63,31 @@ SIGNING_IDENTITY=${MACOS_SIGNING_IDENTITY:--}
 sign_one() {
   target=$1
   if [ "$SIGNING_IDENTITY" = "-" ]; then
-    codesign --force --options runtime --entitlements "$SCRIPT_DIR/macos/UniDrop.entitlements" --sign - "$target"
+    codesign --force --options runtime --entitlements "$SCRIPT_DIR/macos/Xendfile.entitlements" --sign - "$target"
   else
-    codesign --force --timestamp --options runtime --entitlements "$SCRIPT_DIR/macos/UniDrop.entitlements" --sign "$SIGNING_IDENTITY" "$target"
+    codesign --force --timestamp --options runtime --entitlements "$SCRIPT_DIR/macos/Xendfile.entitlements" --sign "$SIGNING_IDENTITY" "$target"
   fi
 }
 
-sign_one "$RESOURCES/unidrop-core"
-sign_one "$RESOURCES/unidrop-update"
-sign_one "$MACOS_DIR/UniDrop"
+sign_one "$RESOURCES/xendfile-core"
+sign_one "$RESOURCES/xendfile-update"
+sign_one "$MACOS_DIR/Xendfile"
 sign_one "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"
-for signed_target in "$RESOURCES/unidrop-core" "$RESOURCES/unidrop-update" "$MACOS_DIR/UniDrop" "$APP"; do
+for signed_target in "$RESOURCES/xendfile-core" "$RESOURCES/xendfile-update" "$MACOS_DIR/Xendfile" "$APP"; do
   codesign -d --verbose=4 "$signed_target" 2>&1 | grep -E 'flags=.*runtime' >/dev/null || {
     printf '%s\n' "Hardened Runtime flag is missing: $signed_target" >&2
     exit 1
   }
 done
-"$RESOURCES/unidrop-core" --version | grep -F "UniDrop $VERSION" >/dev/null
+"$RESOURCES/xendfile-core" --version | grep -F "Xendfile $VERSION" >/dev/null
 
 DMG_ROOT="$WORK_DIR/dmg-root"
 mkdir -p "$DMG_ROOT"
-cp -R "$APP" "$DMG_ROOT/UniDrop.app"
+cp -R "$APP" "$DMG_ROOT/Xendfile.app"
 ln -s /Applications "$DMG_ROOT/Applications"
-OUTPUT="$DIST_DIR/unidrop-$VERSION-macos-universal.dmg"
-hdiutil create -quiet -volname "UniDrop $VERSION" -srcfolder "$DMG_ROOT" -format UDZO -ov "$OUTPUT"
+OUTPUT="$DIST_DIR/xendfile-$VERSION-macos-universal.dmg"
+hdiutil create -quiet -volname "Xendfile $VERSION" -srcfolder "$DMG_ROOT" -format UDZO -ov "$OUTPUT"
 if [ "$SIGNING_IDENTITY" != "-" ]; then
   codesign --force --timestamp --sign "$SIGNING_IDENTITY" "$OUTPUT"
   codesign --verify --verbose=2 "$OUTPUT"
@@ -95,7 +96,7 @@ fi
 mkdir -p "$MOUNT_DIR"
 hdiutil attach -quiet -readonly -nobrowse -mountpoint "$MOUNT_DIR" "$OUTPUT"
 MOUNTED=1
-codesign --verify --deep --strict --verbose=2 "$MOUNT_DIR/UniDrop.app"
+codesign --verify --deep --strict --verbose=2 "$MOUNT_DIR/Xendfile.app"
 test -L "$MOUNT_DIR/Applications"
 hdiutil detach -quiet "$MOUNT_DIR"
 MOUNTED=0

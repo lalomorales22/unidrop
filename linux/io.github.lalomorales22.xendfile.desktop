@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=UniDrop
+Name=Xendfile
 Comment=Secure local file sharing
-Exec=unidrop
-Icon=unidrop
+Exec=xendfile-flatpak
+Icon=io.github.lalomorales22.xendfile
 Terminal=false
 Categories=Network;FileTransfer;
 Keywords=share;send;transfer;local;LAN;

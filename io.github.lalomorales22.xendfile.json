@@ -1,0 +1,68 @@
+{
+    "x-comment": "Local-development manifest only. This is not a Flathub submission manifest; see docs/FLATPAK.md.",
+    "id": "io.github.lalomorales22.xendfile",
+    "runtime": "org.freedesktop.Platform",
+    "runtime-version": "25.08",
+    "sdk": "org.freedesktop.Sdk",
+    "sdk-extensions": [
+        "org.freedesktop.Sdk.Extension.golang"
+    ],
+    "command": "xendfile-flatpak",
+    "finish-args": [
+        "--share=network",
+        "--filesystem=xdg-download/Xendfile:create",
+        "--talk-name=org.kde.StatusNotifierWatcher",
+        "--talk-name=org.freedesktop.StatusNotifierWatcher",
+        "--own-name=org.kde.StatusNotifierItem-*",
+        "--own-name=org.freedesktop.StatusNotifierItem-*"
+    ],
+    "build-options": {
+        "append-path": "/usr/lib/sdk/golang/bin",
+        "env": {
+            "CGO_ENABLED": "0",
+            "GOFLAGS": "-buildvcs=false",
+            "GOPROXY": "off",
+            "GOSUMDB": "off"
+        }
+    },
+    "modules": [
+        {
+            "name": "xendfile",
+            "buildsystem": "simple",
+            "build-commands": [
+                "test \"$(go env GOVERSION)\" = \"go1.26.5\"",
+                "go test -mod=vendor ./...",
+                "version=$(tr -d '\\r\\n' < internal/version/VERSION); go build -mod=vendor -trimpath -ldflags=\"-s -w -X main.appVersion=$version\" -o xendfile .",
+                "version=$(tr -d '\\r\\n' < internal/version/VERSION); go build -mod=vendor -trimpath -ldflags=\"-s -w -X main.appVersion=$version\" -o xendfile-tray ./cmd/xendfile-tray",
+                "go build -mod=vendor -trimpath -ldflags=\"-s -w\" -o xendfile-update ./cmd/xendfile-update",
+                "install -Dm755 xendfile /app/bin/xendfile",
+                "install -Dm755 xendfile-tray /app/bin/xendfile-tray",
+                "install -Dm755 xendfile-update /app/bin/xendfile-update",
+                "install -Dm755 linux/xendfile-flatpak-wrapper.sh /app/bin/xendfile-flatpak",
+                "install -Dm644 linux/io.github.lalomorales22.xendfile.desktop /app/share/applications/io.github.lalomorales22.xendfile.desktop",
+                "install -Dm644 linux/xendfile.svg /app/share/icons/hicolor/scalable/apps/io.github.lalomorales22.xendfile.svg",
+                "install -Dm644 linux/xendfile.svg /app/share/icons/hicolor/scalable/apps/xendfile.svg",
+                "install -Dm644 LICENSE /app/share/licenses/xendfile/LICENSE",
+                "install -Dm644 NOTICE /app/share/licenses/xendfile/NOTICE",
+                "install -Dm644 THIRD_PARTY_NOTICES.md /app/share/licenses/xendfile/THIRD_PARTY_NOTICES.md",
+                "version=$(tr -d '\\r\\n' < internal/version/VERSION); sed -e \"s/__VERSION__/$version/g\" -e \"s/__RELEASE_DATE__/2026-07-30/g\" linux/io.github.lalomorales22.xendfile.metainfo.xml > io.github.lalomorales22.xendfile.metainfo.xml",
+                "install -Dm644 io.github.lalomorales22.xendfile.metainfo.xml /app/share/metainfo/io.github.lalomorales22.xendfile.metainfo.xml",
+                "desktop-file-validate /app/share/applications/io.github.lalomorales22.xendfile.desktop",
+                "appstreamcli validate --no-net /app/share/metainfo/io.github.lalomorales22.xendfile.metainfo.xml"
+            ],
+            "sources": [
+                {
+                    "type": "dir",
+                    "path": ".",
+                    "skip": [
+                        ".git",
+                        ".flatpak-builder",
+                        "build-flatpak",
+                        "dist",
+                        "site/dist"
+                    ]
+                }
+            ]
+        }
+    ]
+}

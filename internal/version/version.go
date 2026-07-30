@@ -1,4 +1,4 @@
-// Package version exposes release metadata shared by every UniDrop binary.
+// Package version exposes release metadata shared by every Xendfile binary.
 package version
 
 import (
@@ -28,7 +28,7 @@ var (
 func mustInteger(value string) int {
 	parsed, err := strconv.Atoi(strings.TrimSpace(value))
 	if err != nil || parsed < 1 {
-		panic("invalid embedded UniDrop protocol version")
+		panic("invalid embedded Xendfile protocol version")
 	}
 	return parsed
 }

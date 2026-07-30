@@ -1,23 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>com.unidrop.app</id>
+  <id>io.github.lalomorales22.xendfile</id>
   <metadata_license>CC0-1.0</metadata_license>
-  <!-- No client license has been granted yet. Replace this only after owner approval. -->
-  <project_license>LicenseRef-proprietary</project_license>
-  <name>UniDrop</name>
+  <project_license>Apache-2.0</project_license>
+  <name>Xendfile</name>
   <summary>Send files securely across your local network</summary>
   <developer id="io.github.lalomorales22">
     <name>Lalo Adrian Morales</name>
   </developer>
   <description>
-    <p>UniDrop transfers files directly between macOS, Windows, and Linux computers on the same local network.</p>
+    <p>Xendfile transfers files directly between macOS, Windows, and Linux computers on the same local network.</p>
     <p>Pairing, receiver approval, TLS 1.3, and pinned device certificates keep transfers private without a cloud account.</p>
   </description>
-  <launchable type="desktop-id">unidrop.desktop</launchable>
+  <launchable type="desktop-id">io.github.lalomorales22.xendfile.desktop</launchable>
   <url type="homepage">https://github.com/lalomorales22/unidrop</url>
   <url type="bugtracker">https://github.com/lalomorales22/unidrop/issues</url>
   <provides>
-    <binary>unidrop</binary>
+    <binary>xendfile</binary>
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>

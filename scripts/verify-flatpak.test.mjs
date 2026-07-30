@@ -9,17 +9,17 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const verifier = path.join(root, 'scripts', 'verify-flatpak.mjs');
-const appID = 'io.github.lalomorales22.unidrop';
+const appID = 'io.github.lalomorales22.xendfile';
 
 function fixture(t) {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'unidrop-flatpak-test-'));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'xendfile-flatpak-test-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   fs.mkdirSync(path.join(directory, 'linux'), { recursive: true });
   for (const source of [
     `${appID}.json`,
     `linux/${appID}.desktop`,
     `linux/${appID}.metainfo.xml`,
-    'linux/flatpak-wrapper.sh',
+    'linux/xendfile-flatpak-wrapper.sh',
   ]) {
     fs.copyFileSync(path.join(root, source), path.join(directory, source));
   }
@@ -29,7 +29,7 @@ function fixture(t) {
 function runVerifier(directory) {
   return spawnSync(process.execPath, [verifier], {
     encoding: 'utf8',
-    env: { ...process.env, UNIDROP_FLATPAK_ROOT: directory },
+    env: { ...process.env, XENDFILE_FLATPAK_ROOT: directory },
   });
 }
 

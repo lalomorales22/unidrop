@@ -1,16 +1,17 @@
 # Flatpak development package and distribution gate
 
-UniDrop has a source-built, offline development manifest at
-`io.github.lalomorales22.unidrop.json`. It is deliberately **not** represented as
+Xendfile has a source-built, offline development manifest at
+`io.github.lalomorales22.xendfile.json`. It is deliberately **not** represented as
 a Flathub submission. The manifest gives Linux contributors a reviewable sandbox
 and build target while the business, policy, and toolchain gates below remain
 open.
 
 ## Current development design
 
-- Application ID: `io.github.lalomorales22.unidrop`, derived from the current
-  upstream GitHub repository. It is provisional until the open brand decision is
-  resolved; no public Flatpak identity has been claimed.
+- Application ID: `io.github.lalomorales22.xendfile`, matching the owner-approved
+  product name and GitHub account. It remains a development identity until the
+  repository slug and any future public Flatpak identity are deliberately
+  finalized.
 - Runtime/SDK branch: Freedesktop `25.08`, the current development selection as
   of July 30, 2026. A future submission must re-check and use Flathub's latest
   supported runtime at that time.
@@ -33,9 +34,9 @@ a substitute for `flatpak-builder-lint`, `appstreamcli`, or a real sandbox run.
 | Permission | Reason |
 | --- | --- |
 | `--share=network` | Same-LAN TCP/TLS transfers, UDP multicast discovery, and the loopback control panel are the product's core function. |
-| `--filesystem=xdg-download/UniDrop:create` | Accepted files are written only to the dedicated UniDrop folder under the user's Downloads directory. No broad home or host access is granted. |
+| `--filesystem=xdg-download/Xendfile:create` | Accepted files are written only to the dedicated Xendfile folder under the user's Downloads directory. No broad home or host access is granted. |
 | StatusNotifier watcher `talk-name` entries | Register the tray item with either the KDE or Freedesktop watcher used by the current desktop. |
-| StatusNotifier item `own-name` entries | Own only UniDrop's per-process tray names. No session-bus or system-bus socket is exposed. |
+| StatusNotifier item `own-name` entries | Own only Xendfile's per-process tray names. No session-bus or system-bus socket is exposed. |
 
 Opening the panel or Downloads folder currently delegates to the runtime's
 `xdg-open`; notifications delegate to `notify-send` when available. A real
@@ -43,7 +44,7 @@ sandbox test must prove those commands route correctly through the desktop porta
 on each target desktop. No extra host D-Bus or filesystem permission is granted
 to make an unverified fallback work. Configuration remains in Flatpak's
 application-specific XDG directory under
-`~/.var/app/io.github.lalomorales22.unidrop/`; host configuration from a source
+`~/.var/app/io.github.lalomorales22.xendfile/`; host configuration from a source
 installation is intentionally not shared.
 
 ## Tool adoption gate
@@ -66,13 +67,13 @@ repository root:
 ```sh
 node scripts/verify-flatpak.mjs
 flatpak-builder --force-clean --sandbox --user --install-deps-from=flathub \
-  build-flatpak io.github.lalomorales22.unidrop.json
-flatpak-builder --run build-flatpak io.github.lalomorales22.unidrop.json \
-  /app/bin/unidrop --version
+  build-flatpak io.github.lalomorales22.xendfile.json
+flatpak-builder --run build-flatpak io.github.lalomorales22.xendfile.json \
+  /app/bin/xendfile --version
 ```
 
 The real validation must also launch the app, discover a second physical
-machine, pair, send and receive through `xdg-download/UniDrop`, exercise the tray
+machine, pair, send and receive through `xdg-download/Xendfile`, exercise the tray
 on GNOME and KDE, confirm the no-tray fallback, inspect `flatpak info
 --show-permissions`, uninstall, and prove no host files outside the declared
 locations changed.
@@ -81,16 +82,16 @@ locations changed.
 
 A submission must not be prepared or opened yet:
 
-- The owner has not approved the client license.
-- The current name has an unresolved brand/trademark decision, so the supposedly
-  permanent application ID is provisional.
+- Apache-2.0 is approved and declared in the AppStream metadata, and Xendfile is
+  the approved product name. Those former gates are closed.
 - There is no stable tagged v0.4.0 source release to replace the local `dir`
   source with an immutable archive and SHA-256.
 - The reviewed builder/linter/runtime evidence and physical Linux desktop tests
   above do not exist yet.
 - Flathub's requirements currently prohibit AI-generated submission pull
   requests and AI-generated or AI-assisted application code and documentation.
-  UniDrop is AI-assisted, including this development manifest and documentation.
+  Xendfile is AI-assisted, including this development manifest and documentation.
+- The owner explicitly deferred Flathub submission during the current alpha.
 
 Therefore neither this repository content nor a derivative may be presented as
 Flathub-ready. The owner must obtain a written policy exception from Flathub or

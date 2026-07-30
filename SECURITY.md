@@ -1,6 +1,6 @@
-# UniDrop security model
+# Xendfile security model
 
-UniDrop v0.3.3 is designed for direct file sharing between computers on the same trusted or semi-trusted local network. It encrypts transfers, requires an explicit first pairing, and asks the receiver before accepting file bytes by default. It is not yet an audited replacement for AirDrop in a hostile enterprise network.
+Xendfile v0.3.3 is designed for direct file sharing between computers on the same trusted or semi-trusted local network. It encrypts transfers, requires an explicit first pairing, and asks the receiver before accepting file bytes by default. It is not yet an audited replacement for AirDrop in a hostile enterprise network.
 
 ## Protections implemented
 
@@ -47,9 +47,9 @@ Discovery announcements contain the device ID, display name, operating system fa
 
 ## Dependency and CVE policy
 
-The transfer core and Windows Win32 shell import only Go standard-library packages; the Windows shell calls `user32.dll`, `shell32.dll`, `kernel32.dll`, and `gdi32.dll` supplied by the operating system. The macOS shell links only Apple’s system AppKit, Foundation, and WebKit frameworks. The Linux tray pins `github.com/godbus/dbus/v5` v5.2.2 (BSD-2-Clause) and its `golang.org/x/sys` v0.44.0 module dependency. Both are vendored, so no package manager or third-party download runs during installation or application startup. The current Linux tray binary links `godbus`; the upstream `x/sys` import is FreeBSD-only and is not linked into UniDrop's supported Linux targets.
+The transfer core and Windows Win32 shell import only Go standard-library packages; the Windows shell calls `user32.dll`, `shell32.dll`, `kernel32.dll`, and `gdi32.dll` supplied by the operating system. The macOS shell links only Apple’s system AppKit, Foundation, and WebKit frameworks. The Linux tray pins `github.com/godbus/dbus/v5` v5.2.2 (BSD-2-Clause) and its `golang.org/x/sys` v0.44.0 module dependency. Both are vendored, so no package manager or third-party download runs during installation or application startup. The current Linux tray binary links `godbus`; the upstream `x/sys` import is FreeBSD-only and is not linked into Xendfile's supported Linux targets.
 
-The exact module versions were queried against OSV on July 30, 2026, with no known vulnerabilities returned. The older transitive `x/sys` v0.27.0 pin was explicitly rejected because it is affected by `GO-2026-5024`; UniDrop overrides it with the fixed v0.44.0 release even though that advisory's vulnerable symbol is Windows-only.
+The exact module versions were queried against OSV on July 30, 2026, with no known vulnerabilities returned. The older transitive `x/sys` v0.27.0 pin was explicitly rejected because it is affected by `GO-2026-5024`; Xendfile overrides it with the fixed v0.44.0 release even though that advisory's vulnerable symbol is Windows-only.
 
 Installers pin the official Go 1.26.5 toolchain and the SHA-256 values published by `go.dev` for macOS, Linux, and Windows on AMD64 and ARM64. That release includes July 2026 security fixes in `crypto/tls` and `os`; older 1.26 releases fixed additional issues in `crypto/x509`, `net/http`, and related packages. Before updating the compiler or either Linux module, review the [official release history](https://go.dev/doc/devel/release), query the [Go vulnerability database](https://pkg.go.dev/vuln/), and rebuild `vendor/` from the reviewed module graph.
 
@@ -67,5 +67,5 @@ safe way to contact you. The public project contact is the repository's
 non-sensitive bugs and questions.
 
 The project aims to acknowledge private reports within three business days. That
-target is not a guarantee or a claim of continuous monitoring while UniDrop is
+target is not a guarantee or a claim of continuous monitoring while Xendfile is
 maintained as alpha software.

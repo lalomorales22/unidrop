@@ -1,10 +1,10 @@
-# UniDrop architecture
+# Xendfile architecture
 
 ## Why local IP instead of cloning AirDrop's radio stack
 
 AirDrop is not simply Bluetooth file transfer. Apple combines identity services, Bluetooth Low Energy discovery, and a proprietary peer-to-peer Wi-Fi link. Windows and Linux expose different Bluetooth, Wi-Fi Direct, firewall, notification, startup, and tray APIs; some capabilities also depend on hardware drivers and privileges.
 
-The universal layer available on all three systems is IP networking. UniDrop therefore uses:
+The universal layer available on all three systems is IP networking. Xendfile therefore uses:
 
 1. UDP multicast to advertise a small device record on each active IPv4 LAN interface.
 2. A local browser panel for choosing peers and files.
@@ -17,12 +17,12 @@ Bluetooth can later serve as a discovery or IP-bootstrap channel, but it should 
 
 ```mermaid
 flowchart LR
-    UIA["Native menu or tray shell\nor browser UI"] --> DA["Sender UniDrop daemon"]
-    CLIA["unidrop send file\nminibrain.local"] -->|"loopback + private token"| DA
-    DA -. "UDP multicast discovery" .-> DB["Receiver UniDrop daemon"]
+    UIA["Native menu or tray shell\nor browser UI"] --> DA["Sender Xendfile daemon"]
+    CLIA["xendfile send file\nminibrain.local"] -->|"loopback + private token"| DA
+    DA -. "UDP multicast discovery" .-> DB["Receiver Xendfile daemon"]
     UIA -. "macOS Bonjour assist" .-> DB
     DA == "TLS 1.3 pinned HTTPS\noffer, approval, streamed file" ==> DB
-    DB --> DL["Downloads/UniDrop"]
+    DB --> DL["Downloads/Xendfile"]
     UIB["Receiver approval UI\nAccept or Decline"] --> DB
 ```
 
@@ -40,7 +40,23 @@ On first pairing:
 4. The receiver rate-limits attempts, verifies the proof, creates its own 256-bit token, persists mutual trust, and rotates the one-time key.
 5. Both sides pin the other's certificate fingerprint for every later request.
 
-This makes pairing mutual: after pairing once, either machine can send when it can discover the other. Reinstalling UniDrop creates a new certificate and requires pairing again.
+This makes pairing mutual: after pairing once, either machine can send when it can discover the other. An in-place reinstall preserves the certificate and trust store; explicitly deleting user data creates a new identity and requires pairing again.
+
+## Former-name compatibility boundary
+
+Xendfile v0.4 changes every user-facing product, binary, package, application,
+and desktop-service name. It deliberately retains the v0.3 `_unidrop._tcp`
+Bonjour type, `X-UniDrop-UI` and `X-UniDrop-Sender-ID` private HTTP headers, and
+`unidrop-pair-v1` HMAC domain separator. These strings are protocol identifiers,
+not current branding; changing them inside protocol v2 would silently break
+pairing and transfer interoperability.
+
+If a new Xendfile configuration directory does not exist, the core and tray may
+reuse an existing non-symlink former-name directory so identity and paired-device
+state survive the rename. New `XENDFILE_*` environment overrides take priority,
+while the corresponding `UNIDROP_*` names remain fallback aliases for v0.3
+automation. Installers remove former binaries and startup entries but never the
+former identity directory unless the user explicitly requests user-data removal.
 
 ## Offer and approval lifecycle
 
@@ -54,7 +70,7 @@ The sender polls the authenticated offer status for up to two minutes. Only an a
 
 ## Friendly command bridge
 
-`unidrop peers` gets the live discovery view from the loopback daemon. `unidrop send <files...> <device>` resolves a case-insensitive device ID, display name, friendly `name.local` alias, discovered address, or a manually reachable hostname. It then opens each local regular file inside the daemon and uses the same offer and streaming path as the browser.
+`xendfile peers` gets the live discovery view from the loopback daemon. `xendfile send <files...> <device>` resolves a case-insensitive device ID, display name, friendly `name.local` alias, discovered address, or a manually reachable hostname. It then opens each local regular file inside the daemon and uses the same offer and streaming path as the browser.
 
 The token in `control-token` prevents an unrelated web page from invoking filesystem paths through the bridge. The bridge accepts only loopback HTTP, absolute regular-file paths, and a correctly authenticated caller running as the same OS user.
 
@@ -62,9 +78,9 @@ The token in `control-token` prevents an unrelated web page from invoking filesy
 
 ### macOS
 
-- Install target: `~/Applications/UniDrop.app`
-- Startup: `~/Library/LaunchAgents/com.unidrop.app.plist`
-- Configuration: `~/Library/Application Support/UniDrop`
+- Install target: `~/Applications/Xendfile.app`
+- Startup: `~/Library/LaunchAgents/io.github.lalomorales22.xendfile.plist`
+- Configuration: `~/Library/Application Support/Xendfile`
 - Background behavior: `LSUIElement` hides the Dock icon while `NSStatusItem` stays visible
 - Native shell: universal Swift/AppKit executable with a transient WebKit popover
 - Discovery: cross-platform UDP multicast plus native `_unidrop._tcp` Bonjour publish/browse
@@ -74,10 +90,10 @@ The token in `control-token` prevents an unrelated web page from invoking filesy
 
 ### Linux
 
-- Install target: `~/.local/bin/unidrop`
+- Install target: `~/.local/bin/xendfile`
 - Startup: systemd user service where available, otherwise XDG autostart
-- Application launcher: `~/.local/share/applications/unidrop.desktop`
-- Configuration: `${XDG_CONFIG_HOME:-~/.config}/UniDrop`
+- Application launcher: `~/.local/share/applications/xendfile.desktop`
+- Configuration: `${XDG_CONFIG_HOME:-~/.config}/Xendfile`
 - Native shell: pure-Go StatusNotifierItem plus DBusMenu companion, without GTK/Qt/Electron
 - Dynamic states: nearby count, pending approvals, reconnecting, and attention icon
 - User actions: Open, receive-mode selection, received files, and authenticated Quit
@@ -85,16 +101,16 @@ The token in `control-token` prevents an unrelated web page from invoking filesy
 - Receive notification: `notify-send` when installed
 - Fallback: application-menu/browser control panel when the desktop has no StatusNotifier host
 - Development Flatpak: source-built offline under the provisional
-  `io.github.lalomorales22.unidrop` ID, with only LAN networking, the dedicated
+  `io.github.lalomorales22.xendfile` ID, with only LAN networking, the dedicated
   Downloads subdirectory, and scoped StatusNotifier D-Bus names exposed; see
   `docs/FLATPAK.md` for the unfulfilled distribution gates
 
 ### Windows
 
-- Install target: `%LOCALAPPDATA%\UniDrop\unidrop.exe` plus `unidrop-tray.exe`
+- Install target: `%LOCALAPPDATA%\Xendfile\xendfile.exe` plus `xendfile-tray.exe`
 - Startup: per-user Startup shortcut
 - Application launcher: per-user Start-menu shortcut
-- Configuration: `%APPDATA%\UniDrop`
+- Configuration: `%APPDATA%\Xendfile`
 - Native shell: pure-Go Win32 hidden window plus `Shell_NotifyIconW`, without .NET, WebView2, or Electron
 - Dynamic states: nearby count, pending approvals, reconnecting, attention icon, and request balloons
 - User actions: Open, receive-mode selection, received files, and authenticated Quit
@@ -115,7 +131,7 @@ Files are deliberately sent as raw request bodies rather than multipart forms. T
 
 ## Roadmap
 
-1. Finder, Explorer, Dolphin, Nautilus, and Thunar **Send with UniDrop** entry points backed by the command bridge.
+1. Finder, Explorer, Dolphin, Nautilus, and Thunar **Send with Xendfile** entry points backed by the command bridge.
 2. Optional compact Windows WebView2 panel with browser fallback.
 3. Signed/notarized installers and an update manifest with binary checksums.
 4. Optional QR pairing and a stronger PAKE-based short-code mode.
@@ -132,8 +148,8 @@ rebuilds both macOS menu architectures when Swift is available, and produces a
 versioned manifest, SPDX 2.3 SBOM, and `SHA256SUMS` without third-party build
 packages.
 
-On macOS, `UNIDROP_BUILD_DEVELOPMENT_DMG=1` additionally creates a universal
-`UniDrop.app`, signs every nested executable and the app with Hardened Runtime,
+On macOS, `XENDFILE_BUILD_DEVELOPMENT_DMG=1` additionally creates a universal
+`Xendfile.app`, signs every nested executable and the app with Hardened Runtime,
 and builds a compressed DMG containing the app plus an Applications shortcut.
 The default ad-hoc identity proves package structure in CI only. A public release
 still requires the separately configured Developer ID identity, notarization,
@@ -144,9 +160,9 @@ desktop entry, scalable icon, AppStream metadata, and runtime license notice.
 AMD64 and ARM64 packages build and execute on matching clean GitHub runners. The
 AppRun entry point starts the core for that AppImage instance and keeps the tray
 in the foreground; `--cli` dispatches an explicit command to the bundled core.
-The AppStream project license remains `LicenseRef-proprietary` while the
-repository has no owner-approved client license and must change with the future
-`LICENSE` file.
+The AppStream project license is `Apache-2.0`, matching the owner-approved
+repository `LICENSE`. Runtime and vendored component notices remain separately
+embedded and documented in `THIRD_PARTY_NOTICES.md`.
 
 The trusted tag workflow is isolated from pull requests. It requires an annotated
 immutable version tag and protected Ed25519 signing key, signs the exact manifest

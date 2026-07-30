@@ -1,4 +1,4 @@
-// UniDrop is a dependency-free, cross-platform local-network file sender.
+// Xendfile is a dependency-free, cross-platform local-network file sender.
 // The complete application core and browser UI intentionally live in this file.
 package main
 
@@ -37,7 +37,7 @@ import (
 	"syscall"
 	"time"
 
-	appversion "unidrop/internal/version"
+	appversion "xendfile/internal/version"
 )
 
 var appVersion = appversion.Current
@@ -48,6 +48,9 @@ const (
 	defaultUIPort    = 43337
 	defaultPeerPort  = 43338
 	discoveryAddress = "239.255.77.77:43339"
+	legacyUIHeader   = "X-UniDrop-UI"
+	legacySenderID   = "X-UniDrop-Sender-ID"
+	legacyPairDomain = "unidrop-pair-v1"
 	maxRecent        = 60
 	defaultMaxBytes  = int64(20 << 30) // 20 GiB
 	peerLifetime     = 30 * time.Second
@@ -228,7 +231,7 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Printf("UniDrop %s (%s/%s)\n", appVersion, runtime.GOOS, runtime.GOARCH)
+		fmt.Printf("Xendfile %s (%s/%s)\n", appVersion, runtime.GOOS, runtime.GOARCH)
 		return
 	}
 	uiURL := "http://" + *uiAddress + "/"
@@ -277,7 +280,7 @@ func main() {
 			_ = openTarget(uiURL)
 		}()
 	}
-	log.Printf("UniDrop %s ready: %s (secure peer port %d)", appVersion, uiURL, app.peerPort)
+	log.Printf("Xendfile %s ready: %s (secure peer port %d)", appVersion, uiURL, app.peerPort)
 	select {
 	case <-ctx.Done():
 	case <-app.shutdown:
@@ -291,25 +294,25 @@ func main() {
 func runSendCLI(args []string) int {
 	target, paths, err := parseSendArguments(args)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "UniDrop:", err)
-		fmt.Fprintln(os.Stderr, "Usage: unidrop send <file> [file...] <device-name.local>")
-		fmt.Fprintln(os.Stderr, "   or: unidrop send --to <device> <file> [file...]")
+		fmt.Fprintln(os.Stderr, "Xendfile:", err)
+		fmt.Fprintln(os.Stderr, "Usage: xendfile send <file> [file...] <device-name.local>")
+		fmt.Fprintln(os.Stderr, "   or: xendfile send --to <device> <file> [file...]")
 		return 2
 	}
 	total := int64(0)
 	for index, path := range paths {
 		absolute, err := filepath.Abs(path)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "UniDrop: resolve %s: %v\n", path, err)
+			fmt.Fprintf(os.Stderr, "Xendfile: resolve %s: %v\n", path, err)
 			return 1
 		}
 		info, err := os.Stat(absolute)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "UniDrop: inspect %s: %v\n", path, err)
+			fmt.Fprintf(os.Stderr, "Xendfile: inspect %s: %v\n", path, err)
 			return 1
 		}
 		if !info.Mode().IsRegular() {
-			fmt.Fprintf(os.Stderr, "UniDrop: %s is not a regular file (folder sending is coming next)\n", path)
+			fmt.Fprintf(os.Stderr, "Xendfile: %s is not a regular file (folder sending is coming next)\n", path)
 			return 1
 		}
 		total += info.Size()
@@ -319,40 +322,40 @@ func runSendCLI(args []string) int {
 	body, _ := json.Marshal(request)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
-	fmt.Printf("UniDrop: asking %s to accept %d file(s), %s total...\n", target, len(paths), humanBytes(total))
+	fmt.Printf("Xendfile: asking %s to accept %d file(s), %s total...\n", target, len(paths), humanBytes(total))
 	response, err := localControlRequest(ctx, http.MethodPost, "/api/cli/send", body)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "UniDrop:", err)
+		fmt.Fprintln(os.Stderr, "Xendfile:", err)
 		return 1
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusCreated {
-		fmt.Fprintln(os.Stderr, "UniDrop:", responseError(response))
+		fmt.Fprintln(os.Stderr, "Xendfile:", responseError(response))
 		return 1
 	}
 	var result cliSendResult
 	if err := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&result); err != nil {
-		fmt.Fprintln(os.Stderr, "UniDrop: invalid local service response:", err)
+		fmt.Fprintln(os.Stderr, "Xendfile: invalid local service response:", err)
 		return 1
 	}
-	fmt.Printf("UniDrop: sent %d file(s) to %s (%s).\n", len(result.Files), result.Target, humanBytes(result.Bytes))
+	fmt.Printf("Xendfile: sent %d file(s) to %s (%s).\n", len(result.Files), result.Target, humanBytes(result.Bytes))
 	return 0
 }
 
 func runPeersCLI() int {
 	response, err := localControlRequest(context.Background(), http.MethodGet, "/api/cli/peers", nil)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "UniDrop:", err)
+		fmt.Fprintln(os.Stderr, "Xendfile:", err)
 		return 1
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		fmt.Fprintln(os.Stderr, "UniDrop:", responseError(response))
+		fmt.Fprintln(os.Stderr, "Xendfile:", responseError(response))
 		return 1
 	}
 	var peers []peerView
 	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&peers); err != nil {
-		fmt.Fprintln(os.Stderr, "UniDrop: invalid local service response:", err)
+		fmt.Fprintln(os.Stderr, "Xendfile: invalid local service response:", err)
 		return 1
 	}
 	sort.Slice(peers, func(i, j int) bool { return strings.ToLower(peers[i].Name) < strings.ToLower(peers[j].Name) })
@@ -369,41 +372,41 @@ func runPeersCLI() int {
 		found++
 	}
 	if found == 0 {
-		fmt.Println("No UniDrop devices are currently visible.")
+		fmt.Println("No Xendfile devices are currently visible.")
 	}
 	return 0
 }
 
 func runStopCLI() int {
 	if stopManagedServices() {
-		fmt.Println("UniDrop: stopped the background service and desktop shell.")
+		fmt.Println("Xendfile: stopped the background service and desktop shell.")
 		return 0
 	}
 	response, err := localControlRequest(context.Background(), http.MethodPost, "/api/cli/shutdown", nil)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "UniDrop:", err)
+		fmt.Fprintln(os.Stderr, "Xendfile:", err)
 		return 1
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		fmt.Fprintln(os.Stderr, "UniDrop:", responseError(response))
+		fmt.Fprintln(os.Stderr, "Xendfile:", responseError(response))
 		return 1
 	}
 	if runtime.GOOS == "linux" {
-		_ = exec.Command("pkill", "-TERM", "-x", "unidrop-tray").Run()
+		_ = exec.Command("pkill", "-TERM", "-x", "xendfile-tray").Run()
 	} else if runtime.GOOS == "windows" {
-		_ = exec.Command("taskkill", "/IM", "unidrop-tray.exe", "/F").Run()
+		_ = exec.Command("taskkill", "/IM", "xendfile-tray.exe", "/F").Run()
 	}
-	fmt.Println("UniDrop: stopped the background service and desktop shell.")
+	fmt.Println("Xendfile: stopped the background service and desktop shell.")
 	return 0
 }
 
 func stopManagedServices() bool {
 	switch runtime.GOOS {
 	case "darwin":
-		return exec.Command("launchctl", "bootout", fmt.Sprintf("gui/%d/com.unidrop.app", os.Getuid())).Run() == nil
+		return exec.Command("launchctl", "bootout", fmt.Sprintf("gui/%d/io.github.lalomorales22.xendfile", os.Getuid())).Run() == nil
 	case "linux":
-		return exec.Command("systemctl", "--user", "stop", "unidrop-tray.service", "unidrop.service").Run() == nil
+		return exec.Command("systemctl", "--user", "stop", "xendfile-tray.service", "xendfile.service").Run() == nil
 	default:
 		return false
 	}
@@ -416,16 +419,16 @@ func startManagedServices() bool {
 		if err != nil {
 			return false
 		}
-		plist := filepath.Join(home, "Library", "LaunchAgents", "com.unidrop.app.plist")
+		plist := filepath.Join(home, "Library", "LaunchAgents", "io.github.lalomorales22.xendfile.plist")
 		return exec.Command("launchctl", "bootstrap", fmt.Sprintf("gui/%d", os.Getuid()), plist).Run() == nil
 	case "linux":
-		return exec.Command("systemctl", "--user", "start", "unidrop.service", "unidrop-tray.service").Run() == nil
+		return exec.Command("systemctl", "--user", "start", "xendfile.service", "xendfile-tray.service").Run() == nil
 	case "windows":
 		executable, err := os.Executable()
 		if err != nil {
 			return false
 		}
-		tray := filepath.Join(filepath.Dir(executable), "unidrop-tray.exe")
+		tray := filepath.Join(filepath.Dir(executable), "xendfile-tray.exe")
 		if info, err := os.Stat(tray); err != nil || !info.Mode().IsRegular() {
 			return false
 		}
@@ -447,14 +450,14 @@ func waitForUI(uiURL string, timeout time.Duration) bool {
 }
 
 func startLinuxTray(uiURL string) {
-	if exec.Command("pgrep", "-x", "unidrop-tray").Run() == nil {
+	if exec.Command("pgrep", "-x", "xendfile-tray").Run() == nil {
 		return
 	}
 	executable, err := os.Executable()
 	if err != nil {
 		return
 	}
-	tray := filepath.Join(filepath.Dir(executable), "unidrop-tray")
+	tray := filepath.Join(filepath.Dir(executable), "xendfile-tray")
 	if info, err := os.Stat(tray); err != nil || !info.Mode().IsRegular() || info.Mode()&0111 == 0 {
 		return
 	}
@@ -486,19 +489,19 @@ func localControlRequest(ctx context.Context, method, path string, body []byte) 
 	}
 	tokenBytes, err := os.ReadFile(filepath.Join(configDir, "control-token"))
 	if err != nil {
-		return nil, errors.New("the UniDrop service is not initialized; open UniDrop once and try again")
+		return nil, errors.New("the Xendfile service is not initialized; open Xendfile once and try again")
 	}
 	token := strings.TrimSpace(string(tokenBytes))
 	if len(token) != 64 {
-		return nil, errors.New("the local UniDrop control token is invalid")
+		return nil, errors.New("the local Xendfile control token is invalid")
 	}
-	base := strings.TrimSpace(os.Getenv("UNIDROP_UI_URL"))
+	base := environmentValue("XENDFILE_UI_URL", "UNIDROP_UI_URL")
 	if base == "" {
 		base = fmt.Sprintf("http://127.0.0.1:%d", defaultUIPort)
 	}
 	parsed, err := url.Parse(base)
 	if err != nil || parsed.Scheme != "http" || (parsed.Hostname() != "127.0.0.1" && parsed.Hostname() != "localhost" && parsed.Hostname() != "::1") {
-		return nil, errors.New("UNIDROP_UI_URL must be an HTTP loopback address")
+		return nil, errors.New("XENDFILE_UI_URL must be an HTTP loopback address")
 	}
 	request, err := http.NewRequestWithContext(ctx, method, strings.TrimSuffix(base, "/")+path, bytes.NewReader(body))
 	if err != nil {
@@ -510,7 +513,7 @@ func localControlRequest(ctx context.Context, method, path string, body []byte) 
 	}
 	response, err := (&http.Client{}).Do(request)
 	if err != nil {
-		return nil, errors.New("the UniDrop background service is not running")
+		return nil, errors.New("the Xendfile background service is not running")
 	}
 	return response, nil
 }
@@ -549,14 +552,14 @@ func newApp(uiAddress string) (*App, error) {
 		offers:      make(map[string]*IncomingOffer),
 		attempts:    make(map[string]*attemptWindow),
 		configDir:   configDir,
-		downloadDir: filepath.Join(home, "Downloads", "UniDrop"),
+		downloadDir: filepath.Join(home, "Downloads", "Xendfile"),
 		statePath:   filepath.Join(configDir, "state.json"),
 		uiAddress:   uiAddress,
 		maxBytes:    defaultMaxBytes,
 		discovery:   "starting",
 		shutdown:    make(chan struct{}),
 	}
-	if override := strings.TrimSpace(os.Getenv("UNIDROP_DOWNLOAD_DIR")); override != "" {
+	if override := environmentValue("XENDFILE_DOWNLOAD_DIR", "UNIDROP_DOWNLOAD_DIR"); override != "" {
 		a.downloadDir = override
 	}
 	if err := a.loadState(); err != nil {
@@ -568,7 +571,7 @@ func newApp(uiAddress string) (*App, error) {
 	if a.identity.Name == "" {
 		host, _ := os.Hostname()
 		if strings.TrimSpace(host) == "" {
-			host = "UniDrop device"
+			host = "Xendfile device"
 		}
 		a.identity.Name = cleanDisplayName(host)
 	}
@@ -600,11 +603,25 @@ func configDirectory() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("find config directory: %w", err)
 	}
-	configDir := filepath.Join(configBase, "UniDrop")
-	if override := strings.TrimSpace(os.Getenv("UNIDROP_CONFIG_DIR")); override != "" {
+	configDir := filepath.Join(configBase, "Xendfile")
+	if override := environmentValue("XENDFILE_CONFIG_DIR", "UNIDROP_CONFIG_DIR"); override != "" {
 		configDir = override
+	} else if _, err := os.Lstat(configDir); errors.Is(err, os.ErrNotExist) {
+		// Preserve an existing pre-rename identity and trust store in place. A
+		// symlink is never selected as an implicit compatibility directory.
+		legacyDir := filepath.Join(configBase, "UniDrop")
+		if info, legacyErr := os.Lstat(legacyDir); legacyErr == nil && info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+			configDir = legacyDir
+		}
 	}
 	return configDir, nil
+}
+
+func environmentValue(primary, legacy string) string {
+	if value := strings.TrimSpace(os.Getenv(primary)); value != "" {
+		return value
+	}
+	return strings.TrimSpace(os.Getenv(legacy))
 }
 
 func loadOrCreateControlToken(dir string) (string, error) {
@@ -751,7 +768,7 @@ func loadOrCreateCertificate(dir, name string) (tls.Certificate, string, error) 
 	now := time.Now()
 	tmpl := x509.Certificate{
 		SerialNumber:          serial,
-		Subject:               pkix.Name{CommonName: "UniDrop " + name},
+		Subject:               pkix.Name{CommonName: "Xendfile " + name},
 		NotBefore:             now.Add(-5 * time.Minute),
 		NotAfter:              now.AddDate(5, 0, 0),
 		KeyUsage:              x509.KeyUsageDigitalSignature,
@@ -887,7 +904,7 @@ func (a *App) requireLocalWrite(next http.HandlerFunc) http.HandlerFunc {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		if r.Header.Get("X-UniDrop-UI") != "1" {
+		if r.Header.Get(legacyUIHeader) != "1" {
 			http.Error(w, "local request header required", http.StatusForbidden)
 			return
 		}
@@ -1125,7 +1142,7 @@ func (a *App) handleOfferCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	senderID := r.Header.Get("X-UniDrop-Sender-ID")
+	senderID := r.Header.Get(legacySenderID)
 	peer, ok := a.authenticate(senderID, r.Header.Get("Authorization"))
 	if !ok {
 		writeError(w, http.StatusUnauthorized, errors.New("this device is not paired"))
@@ -1176,7 +1193,7 @@ func (a *App) handleOfferCreate(w http.ResponseWriter, r *http.Request) {
 	a.offers[offer.ID] = offer
 	a.mu.Unlock()
 	if status == "pending" {
-		go notifyMessage("UniDrop request from "+peer.Name, request.File+" • "+humanBytes(request.Bytes))
+		go notifyMessage("Xendfile request from "+peer.Name, request.File+" • "+humanBytes(request.Bytes))
 	}
 	httpStatus := http.StatusCreated
 	if status == "pending" {
@@ -1190,7 +1207,7 @@ func (a *App) handleOfferStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	senderID := r.Header.Get("X-UniDrop-Sender-ID")
+	senderID := r.Header.Get(legacySenderID)
 	if _, ok := a.authenticate(senderID, r.Header.Get("Authorization")); !ok {
 		writeError(w, http.StatusUnauthorized, errors.New("this device is not paired"))
 		return
@@ -1313,7 +1330,7 @@ func (a *App) inspectAddressContext(ctx context.Context, raw string) (*Discovere
 		return nil, err
 	}
 	if info.Protocol != protocolVersion || !validID(info.ID) || !validFingerprint(info.Fingerprint) {
-		return nil, errors.New("address is not a compatible UniDrop peer")
+		return nil, errors.New("address is not a compatible Xendfile peer")
 	}
 	presented := responseFingerprint(resp)
 	if !hmac.Equal([]byte(presented), []byte(info.Fingerprint)) {
@@ -1472,7 +1489,7 @@ func (a *App) allowPairAttempt(ip string) bool {
 func pairProof(code, recipientFingerprint string, request pairRequest) string {
 	returnHash := sha256.Sum256([]byte(request.ReturnToken))
 	message := strings.Join([]string{
-		"unidrop-pair-v1", recipientFingerprint, request.SenderID,
+		legacyPairDomain, recipientFingerprint, request.SenderID,
 		request.SenderFingerprint, request.Nonce, hex.EncodeToString(returnHash[:]),
 	}, "\n")
 	mac := hmac.New(sha256.New, []byte(normalizePairingCode(code)))
@@ -1609,7 +1626,7 @@ func (a *App) resolveTarget(target string) (*readyPeerConnection, error) {
 	}
 	a.mu.RUnlock()
 	if len(matches) > 1 {
-		return nil, fmt.Errorf("%q matches multiple devices; use 'unidrop peers' and choose a device address", target)
+		return nil, fmt.Errorf("%q matches multiple devices; use 'xendfile peers' and choose a device address", target)
 	}
 	if len(matches) == 1 {
 		return a.readyPeer(matches[0])
@@ -1621,7 +1638,7 @@ func (a *App) resolveTarget(target string) (*readyPeerConnection, error) {
 			return a.readyPeer(peer.ID)
 		}
 	}
-	return nil, fmt.Errorf("could not find %q; run 'unidrop peers' to list visible devices", target)
+	return nil, fmt.Errorf("could not find %q; run 'xendfile peers' to list visible devices", target)
 }
 
 func normalizeDeviceTarget(value string) string {
@@ -1739,7 +1756,7 @@ func (a *App) requestOffer(ctx context.Context, peer *readyPeerConnection, fileN
 
 func (a *App) authorizePeerRequest(request *http.Request, peer *TrustedPeer) {
 	request.Header.Set("Authorization", "Bearer "+peer.OutgoingToken)
-	request.Header.Set("X-UniDrop-Sender-ID", a.identity.ID)
+	request.Header.Set(legacySenderID, a.identity.ID)
 }
 
 func (a *App) handleReceive(w http.ResponseWriter, r *http.Request) {
@@ -1747,7 +1764,7 @@ func (a *App) handleReceive(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	senderID := r.Header.Get("X-UniDrop-Sender-ID")
+	senderID := r.Header.Get(legacySenderID)
 	peer, ok := a.authenticate(senderID, r.Header.Get("Authorization"))
 	if !ok {
 		writeError(w, http.StatusUnauthorized, errors.New("this device is not paired"))
@@ -1778,7 +1795,7 @@ func (a *App) handleReceive(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	transfer := a.addTransfer("receive", peer.Name, name)
-	tmp, err := os.CreateTemp(a.downloadDir, ".unidrop-*.part")
+	tmp, err := os.CreateTemp(a.downloadDir, ".xendfile-*.part")
 	if err != nil {
 		a.finishTransfer(transfer, "failed", err)
 		writeError(w, http.StatusInternalServerError, err)
@@ -2362,7 +2379,7 @@ func cleanDisplayName(value string) string {
 		}
 	}
 	if builder.Len() == 0 {
-		return "UniDrop device"
+		return "Xendfile device"
 	}
 	return builder.String()
 }
@@ -2475,7 +2492,7 @@ func openTarget(target string) error {
 }
 
 func notifyReceived(file, sender string) {
-	notifyMessage("UniDrop received "+file, "From "+sender)
+	notifyMessage("Xendfile received "+file, "From "+sender)
 }
 
 func notifyMessage(title, message string) {
@@ -2514,7 +2531,7 @@ const uiHTML = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>UniDrop</title>
+<title>Xendfile</title>
 <style>
 :root{color-scheme:dark;--ink:#f7f7fa;--muted:#888d99;--card:#0a0c11e8;--line:#22252e;--blue:#7b8cff;--violet:#9a6cff;--green:#52d99a;--red:#ff7088}
 *{box-sizing:border-box}html{background:#020304}body{margin:0;min-height:100vh;font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);background:radial-gradient(circle at 14% 0,#161329 0,transparent 34%),radial-gradient(circle at 92% 4%,#101b2a 0,transparent 31%),#020304}
@@ -2524,14 +2541,14 @@ body.compact{background:#020304}body.compact main{width:100%;padding:12px}body.c
 </style>
 </head>
 <body><main>
-<header class="top"><div class="brand"><div class="logo">⇄</div><div><h1>UniDrop</h1><p id="deviceName">Secure local file sharing</p></div></div><button class="button" onclick="openDownloads()">Open received files</button></header>
+<header class="top"><div class="brand"><div class="logo">⇄</div><div><h1>Xendfile</h1><p id="deviceName">Secure local file sharing</p></div></div><button class="button" onclick="openDownloads()">Open received files</button></header>
 <div class="grid">
-<section class="card" id="nearbyCard"><div class="sectionhead"><h2>Nearby devices</h2><span class="live"><i></i><span id="discoveryLabel">Searching automatically</span></span></div><div id="devices" class="devices"><div class="empty"><span class="radar"></span><strong>Searching nearby…</strong><span class="small">UniDrop scans this network automatically.</span></div></div><details class="fallback"><summary>Connect by address instead</summary><div class="manual"><input id="manual" placeholder="Other device address, e.g. 192.168.0.25:43338"><button onclick="addPeer()">Add</button></div><div class="addresshint" id="addressHint"></div></details></section>
+<section class="card" id="nearbyCard"><div class="sectionhead"><h2>Nearby devices</h2><span class="live"><i></i><span id="discoveryLabel">Searching automatically</span></span></div><div id="devices" class="devices"><div class="empty"><span class="radar"></span><strong>Searching nearby…</strong><span class="small">Xendfile scans this network automatically.</span></div></div><details class="fallback"><summary>Connect by address instead</summary><div class="manual"><input id="manual" placeholder="Other device address, e.g. 192.168.0.25:43338"><button onclick="addPeer()">Add</button></div><div class="addresshint" id="addressHint"></div></details></section>
 <aside class="card" id="pairCard"><h2>Pair this device</h2><div class="muted small paircopy">Use this one-time key on the sending device.</div><div id="code" class="code">----&nbsp;----&nbsp;----&nbsp;----</div><button class="ghost small" onclick="copyCode()">Copy key</button> <button class="ghost small" onclick="rotateCode()">Rotate</button><div class="muted small" style="margin-top:13px">TLS 1.3 • certificate pinning • local network only</div></aside>
 <section class="card wide" id="incomingCard"><div class="sectionhead"><h2>Incoming requests</h2><select id="receiveMode" class="mode" onchange="setReceiveMode()" aria-label="Receive mode"><option value="ask">Ask every time</option><option value="trusted">Auto-accept paired devices</option><option value="off">Receiving paused</option></select></div><div id="offers" class="offerlist"><div class="empty">No one is waiting to send you a file</div></div></section>
 <section class="card" id="sendCard"><h2>Send files <span id="selectedLabel" class="muted">— choose a device</span></h2><label class="drop" id="drop"><input id="files" type="file" multiple><strong>Drop files here</strong><span class="muted">or click to choose files</span></label><div class="sendbar"><input id="pairCode" maxlength="19" autocomplete="off" placeholder="Other device's pairing key"><button class="ghost pairaction" id="pairButton" onclick="pairNow()">Pair</button><button class="primary" id="send" onclick="sendSelected()">Send</button></div><div class="progress"><i id="progress"></i></div><div id="queue" class="muted small" style="margin-top:7px"></div></section>
 <aside class="card" id="activityCard"><h2>Recent activity</h2><div id="transfers"><div class="empty">No transfers yet</div></div></aside>
-<footer class="shellbar"><button onclick="shellAction('open')">Open full window</button><button onclick="shellAction('quit')">Quit UniDrop</button></footer>
+<footer class="shellbar"><button onclick="shellAction('open')">Open full window</button><button onclick="shellAction('quit')">Quit Xendfile</button></footer>
 </div></main><div id="toast" class="toast"></div>
 <script>
 const compact=new URLSearchParams(location.search).get('compact')==='1';document.body.classList.toggle('compact',compact);let selected=null,chosen=[],peers=[];const $=id=>document.getElementById(id);
@@ -2539,7 +2556,7 @@ async function api(path,options={}){options.headers={...(options.headers||{}),'X
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function icon(os){return os==='darwin'?'●':os==='windows'?'⊞':os==='linux'?'◆':'◇'}
 async function refresh(){try{const [info,p,t,o]=await Promise.all([api('/api/info'),api('/api/peers'),api('/api/transfers'),api('/api/offers')]);peers=p;const online=p.filter(x=>x.online);$('deviceName').textContent=info.name+' • '+(online.length?online.length+' nearby':'scanning nearby');$('code').textContent=info.pairing_code;$('receiveMode').value=info.receive_mode;$('discoveryLabel').textContent=online.length?online.length+' found':info.discovery_status==='retrying'?'Retrying search':'Searching automatically';const addresses=(info.lan_addresses||[]).map(x=>x+':'+info.peer_port);$('addressHint').textContent=addresses.length?'This device: '+addresses.join(' • '):'Automatic search is on. Manual address is only a fallback.';renderPeers();renderTransfers(t);renderOffers(o)}catch(e){toast(e.message,false)}}
-function renderPeers(){const online=peers.filter(p=>p.online);if(!online.length){$('devices').innerHTML='<div class="empty"><span class="radar"></span><strong>Searching nearby…</strong><span class="small">Keep UniDrop open on the other computer.</span></div>';return}$('devices').innerHTML=online.map(p=>'<button class="device '+(selected===p.id?'selected':'')+'" data-peer="'+p.id+'"><span class="os">'+icon(p.os)+'</span><span><strong>'+esc(p.name)+'</strong><span class="status">'+(p.trusted?'Paired and ready':'Tap to pair')+'</span></span></button>').join('');document.querySelectorAll('[data-peer]').forEach(b=>b.onclick=()=>choose(b.dataset.peer))}
+function renderPeers(){const online=peers.filter(p=>p.online);if(!online.length){$('devices').innerHTML='<div class="empty"><span class="radar"></span><strong>Searching nearby…</strong><span class="small">Keep Xendfile open on the other computer.</span></div>';return}$('devices').innerHTML=online.map(p=>'<button class="device '+(selected===p.id?'selected':'')+'" data-peer="'+p.id+'"><span class="os">'+icon(p.os)+'</span><span><strong>'+esc(p.name)+'</strong><span class="status">'+(p.trusted?'Paired and ready':'Tap to pair')+'</span></span></button>').join('');document.querySelectorAll('[data-peer]').forEach(b=>b.onclick=()=>choose(b.dataset.peer))}
 function choose(id){selected=id;const p=peers.find(x=>x.id===id);$('selectedLabel').textContent=p?'— '+p.name:'';const needsPair=!p?.trusted;$('pairCode').style.display=needsPair?'block':'none';$('pairButton').style.display=needsPair?'block':'none';renderPeers()}
 function renderTransfers(items){$('transfers').innerHTML=items.length?items.slice(0,6).map(t=>'<div class="transfer"><strong>'+(t.direction==='send'?'↑':'↓')+' '+esc(t.file)+'</strong><span class="'+(t.status==='complete'?'good':t.status==='failed'?'bad':'muted')+'">'+esc(t.status)+'</span><span class="muted small">'+esc(t.peer)+'</span><span class="muted small">'+size(t.bytes)+'</span></div>').join(''):'<div class="empty">No transfers yet</div>'}
 function renderOffers(items){$('offers').innerHTML=items.length?items.map(o=>'<div class="offer"><span class="offericon">↓</span><span class="offermain"><strong>'+esc(o.file)+'</strong><span class="muted">From '+esc(o.sender_name)+' • '+size(o.bytes)+'</span></span>'+(o.status==='pending'?'<span class="offeractions"><button class="ghost decline" data-offer-action="decline" data-offer="'+o.id+'">Decline</button><button class="primary" data-offer-action="accept" data-offer="'+o.id+'">Accept</button></span>':'<span class="status">Receiving…</span>')+'</div>').join(''):'<div class="empty">No one is waiting to send you a file</div>';document.querySelectorAll('[data-offer-action]').forEach(b=>b.onclick=()=>actOffer(b.dataset.offer,b.dataset.offerAction))}
@@ -2556,7 +2573,7 @@ async function actOffer(id,action){try{await api('/api/offer-action',{method:'PO
 async function setReceiveMode(){try{const mode=$('receiveMode').value;await api('/api/receive-mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode})});toast(mode==='off'?'Incoming files paused':mode==='ask'?'Approval required for every file':'Paired devices will be accepted automatically',true);await refresh()}catch(e){toast(e.message,false)}}
 async function copyCode(){try{await navigator.clipboard.writeText($('code').textContent);toast('Pairing key copied',true)}catch(e){toast('Copy the key manually',false)}}
 async function openDownloads(){try{await api('/api/open-downloads',{method:'POST'})}catch(e){toast(e.message,false)}}
-function shellAction(action){if(window.webkit?.messageHandlers?.unidrop){window.webkit.messageHandlers.unidrop.postMessage(action);return}if(action==='open')location.href='/' ;else toast('Quit from the UniDrop menu-bar app',false)}
+function shellAction(action){if(window.webkit?.messageHandlers?.xendfile){window.webkit.messageHandlers.xendfile.postMessage(action);return}if(action==='open')location.href='/' ;else toast('Quit from the Xendfile menu-bar app',false)}
 let toastTimer;function toast(message,ok){const t=$('toast');t.textContent=message;t.className='toast '+(ok?'good':'bad');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.className='toast',4500)}
 refresh();setInterval(refresh,compact?1800:3000);
 </script></body></html>`

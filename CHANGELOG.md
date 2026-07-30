@@ -1,7 +1,17 @@
-# UniDrop release notes
+# Xendfile release notes
 
-UniDrop is currently an alpha project. These notes describe source snapshots;
+Xendfile is currently an alpha project. These notes describe source snapshots;
 they are not a substitute for a signed, tagged release.
+
+## 0.4.0 in progress
+
+- Renamed the product from UniDrop to Xendfile after the owner's preliminary
+  brand decision.
+- Adopted the Apache License 2.0 and published third-party and name/logo notices.
+- Renamed binaries, installers, desktop identities, release metadata, and the
+  landing page while retaining v0.3 wire identifiers for compatibility.
+- Added migration cleanup that removes former application files but preserves
+  the existing device identity and paired-device state.
 
 ## 0.3.3 alpha
 
@@ -21,4 +31,3 @@ they are not a substitute for a signed, tagged release.
   implemented.
 - The current short pairing code has not received an independent cryptographic
   review and will be replaced or strengthened before production.
-

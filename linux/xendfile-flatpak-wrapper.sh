@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-CORE=/app/bin/unidrop
-TRAY=/app/bin/unidrop-tray
+CORE=/app/bin/xendfile
+TRAY=/app/bin/xendfile-tray
 
 case "${1:-}" in
   --version)

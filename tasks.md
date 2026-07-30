@@ -1,6 +1,6 @@
-# UniDrop Startup Execution Plan
+# Xendfile Startup Execution Plan
 
-This is the authoritative, forward-only plan for turning UniDrop from a strong
+This is the authoritative, forward-only plan for turning Xendfile from a strong
 cross-platform alpha into a trustworthy open-source product and sustainable SaaS
 business. Complete phases in order. Security work begins in Phase 1 and continues
 throughout; Phase 4 is the formal public-SaaS security gate.
@@ -10,10 +10,10 @@ throughout; Phase 4 is the formal public-SaaS security gate.
 Build the fastest, simplest, most trustworthy way to move files between macOS,
 Windows, Linux, and eventually mobile devices.
 
-UniDrop must remain local-first:
+Xendfile must remain local-first:
 
 - Same-LAN transfers stay free, direct, and available without an account.
-- File contents and device private keys never become visible to UniDrop servers.
+- File contents and device private keys never become visible to Xendfile servers.
 - The paid service may provide identity, remote discovery, encrypted rendezvous,
   policy, billing, and an opaque encrypted relay.
 - Direct connections are always preferred over relaying.
@@ -34,7 +34,7 @@ UniDrop must remain local-first:
 - [x] CLI supports peer listing, file sending, starting, and stopping.
 - [x] A dark responsive landing page exists under `site/`.
 - [x] The landing page is committed to the public repository.
-- [ ] The project has an explicit open-source license.
+- [x] The project has an explicit open-source license.
 - [ ] GitHub Releases contain native installers and checksums.
 - [x] Automated cross-platform CI and release workflows exist.
 - [ ] macOS and Windows artifacts are code-signed; macOS is notarized.
@@ -47,10 +47,10 @@ UniDrop must remain local-first:
 
 | Edition | Proposed value |
 | --- | --- |
-| UniDrop Free | Open-source, unlimited same-network transfers, tray apps, and CLI |
-| UniDrop Pro | Remote E2EE transfers, resumable folders, and a personal device directory |
-| UniDrop Teams | Team directory, roles, device revocation, policies, and audit events |
-| UniDrop Enterprise | SSO/SCIM, managed deployment, compliance controls, and priority support |
+| Xendfile Free | Open-source, unlimited same-network transfers, tray apps, and CLI |
+| Xendfile Pro | Remote E2EE transfers, resumable folders, and a personal device directory |
+| Xendfile Teams | Team directory, roles, device revocation, policies, and audit events |
+| Xendfile Enterprise | SSO/SCIM, managed deployment, compliance controls, and priority support |
 
 Pricing is a hypothesis until Phase 6 customer interviews validate willingness to
 pay. Do not weaken the free local product merely to force conversion.
@@ -85,13 +85,14 @@ download, install, verify, update, and remove.
 ## 1.1 Repository, license, and brand foundation
 
 - [x] Commit the complete `site/` directory without overwriting unrelated work.
-- [ ] Choose the client license with owner approval and legal review when needed.
-  Apache-2.0 is the initial recommendation because it is permissive and includes
-  an explicit patent grant; this is a decision, not an automatic selection.
-- [ ] Add `LICENSE` and ensure every vendored dependency is represented in
+- [x] Choose the client license with owner approval and legal review when needed.
+  The owner approved Apache-2.0 on July 30, 2026. Its patent grant, warranty
+  disclaimer, and limitation of liability match the intended open-source alpha.
+- [x] Add `LICENSE` and ensure every vendored dependency is represented in
   `THIRD_PARTY_NOTICES.md`.
-- [ ] Document that the UniDrop name and logo are not granted for confusing or
+- [x] Document that the Xendfile name and logo are not granted for confusing or
   impersonating distributions, if that is the owner's chosen trademark policy.
+  The owner approved the policy recorded in `TRADEMARKS.md`.
 - [x] Search relevant trademark records and domain availability before spending
   materially on the brand.
 - [x] Add a public project contact, private security-reporting address, Code of
@@ -110,6 +111,8 @@ download, install, verify, update, and remove.
   smoke tests for each operating system.
 - [ ] Test LAN discovery and manual pairing across at least macOS↔Linux,
   macOS↔Windows, and Windows↔Linux.
+  Windows and Linux owner testing will begin from the pushed Xendfile commit;
+  use `docs/CROSS_PLATFORM_TEST_CHECKLIST.md` and attach sanitized evidence.
 - [x] Pin third-party GitHub Actions to immutable commit SHAs after advisory and
   publisher review.
 - [x] Use least-privilege workflow permissions and isolate signing workflows from
@@ -136,6 +139,8 @@ download, install, verify, update, and remove.
 ### macOS
 
 - [ ] Enroll the owner/company in the Apple Developer Program.
+  The owner reports no Apple Developer account or signing access; public macOS
+  signing and notarization remain blocked.
 - [x] Replace the checked-in portable menu binary with a reproducible signed build
   artifact or document why it remains necessary.
 - [x] Enable Hardened Runtime with the minimum required entitlements.
@@ -150,6 +155,9 @@ download, install, verify, update, and remove.
 ### Windows
 
 - [ ] Create a stable application identity and publisher identity.
+  The development identity is `io.github.lalomorales22.xendfile`; the owner
+  reports no Microsoft publisher/signing access, so it is not a trusted Windows
+  publisher identity.
 - [ ] Prefer MSIX and Microsoft Store distribution unless a signed direct-download
   installer is demonstrably better for required shell integration.
 - [ ] Ensure firewall rules are narrow, scoped to private networks, and removed on
@@ -164,9 +172,9 @@ download, install, verify, update, and remove.
 - [ ] Create and lint a Flatpak manifest, then prepare a Flathub submission.
   A dependency-free, least-permission development manifest and static validator
   now exist. The item remains open pending reviewed Flatpak tooling, an official
-  builder/linter run, physical desktop tests, the license and brand decisions,
-  a stable source release, and resolution of Flathub's current AI-content policy;
-  see `docs/FLATPAK.md`.
+  builder/linter run, physical desktop tests, a stable source release, and
+  resolution of Flathub's current AI-content policy. The owner deferred the
+  submission during the current alpha; see `docs/FLATPAK.md`.
 - [ ] Evaluate `.deb` and `.rpm` only after AppImage/Flatpak are reliable.
 - [ ] Test GNOME, KDE Plasma, and at least one tray-host-limited desktop.
 - [ ] Verify XDG paths, Wayland behavior, user services, autostart fallback, and
@@ -194,6 +202,8 @@ download, install, verify, update, and remove.
 ## 1.6 Landing page and beta distribution
 
 - [ ] Make the production landing page public after explicit owner approval.
+  The renamed preview remains owner-only; the owner deferred public launch until
+  the unsigned alpha and real-machine tests are addressed.
 - [ ] Point Mac, Windows, and Linux buttons at real release assets rather than the
   source archive.
 - [x] Detect operating system and architecture without preventing manual choices.
@@ -204,6 +214,7 @@ download, install, verify, update, and remove.
   published retention rule.
 - [ ] Recruit at least ten beta testers covering all supported OS/architecture
   combinations and at least three mixed-platform transfer pairs.
+  Deferred by the owner during the current machine-testing pass.
 - [ ] Resolve every release-blocking beta defect and document accepted limitations.
 
 ## Phase 1 tests
@@ -230,7 +241,7 @@ download, install, verify, update, and remove.
 
 ## Objective
 
-Make UniDrop feel faster and more native than generic file-sharing tools while
+Make Xendfile feel faster and more native than generic file-sharing tools while
 closing the current protocol and usability limitations.
 
 ## 2.1 Trust and device management
@@ -283,7 +294,7 @@ closing the current protocol and usability limitations.
 ## 2.5 Native operating-system integration
 
 - [ ] Finder: add a supported Quick Action or Share extension for “Send with
-  UniDrop.”
+  Xendfile.”
 - [ ] Explorer: add a supported Windows context-menu integration with clean
   install/uninstall behavior.
 - [ ] Linux: integrate with Nautilus, Dolphin, and Thunar using supported extension
@@ -313,7 +324,7 @@ closing the current protocol and usability limitations.
   and Android clients.
 - [ ] Prototype discovery, pairing, send, receive, background limitations, and OS
   share-sheet integration on both platforms.
-- [ ] Support sharing into UniDrop from Photos, Files, and other applications.
+- [ ] Support sharing into Xendfile from Photos, Files, and other applications.
 - [ ] Document background-transfer limitations honestly.
 - [ ] Complete store privacy disclosures and encryption declarations.
 
@@ -337,12 +348,12 @@ closing the current protocol and usability limitations.
 
 ---
 
-# Phase 3 — UniDrop Cloud Private Alpha
+# Phase 3 — Xendfile Cloud Private Alpha
 
 ## Objective
 
 Build the smallest useful SaaS control plane for remote discovery and end-to-end
-encrypted transfer without turning UniDrop into cloud storage.
+encrypted transfer without turning Xendfile into cloud storage.
 
 ## 3.1 Architecture and privacy boundaries
 
@@ -420,7 +431,7 @@ encrypted transfer without turning UniDrop into cloud storage.
 
 - [ ] Select a payment provider after fee, tax, webhook, security, and operational
   review.
-- [ ] Keep card data out of UniDrop systems using hosted checkout/customer portal.
+- [ ] Keep card data out of Xendfile systems using hosted checkout/customer portal.
 - [ ] Implement server-side plan entitlements rather than trusting client flags.
 - [ ] Verify signed webhooks, handle replay/idempotency, and reconcile subscription
   state.
@@ -454,7 +465,7 @@ encrypted transfer without turning UniDrop into cloud storage.
 
 ## Objective
 
-Prove that UniDrop can responsibly operate a public encrypted-transfer service and
+Prove that Xendfile can responsibly operate a public encrypted-transfer service and
 respond when systems, dependencies, keys, or assumptions fail.
 
 ## 4.1 Formal threat model and security requirements
@@ -479,7 +490,7 @@ respond when systems, dependencies, keys, or assumptions fail.
   regression tests, and retest.
 - [ ] Publish a transparent audit summary and unresolved limitations after the
   reviewer approves disclosure.
-- [ ] Do not market UniDrop as independently audited until this gate is complete.
+- [ ] Do not market Xendfile as independently audited until this gate is complete.
 
 ## 4.3 Secure development and supply chain
 
@@ -647,7 +658,7 @@ and insurance decisions; completing a software checklist is not a substitute.
 
 ## Objective
 
-Find a narrow group that repeatedly needs UniDrop, prove they will pay, launch
+Find a narrow group that repeatedly needs Xendfile, prove they will pay, launch
 responsibly, and create a measurable learning loop.
 
 ## 6.1 Ideal customer research
@@ -658,7 +669,7 @@ responsibly, and create a measurable learning loop.
 - [ ] Record current tools, transfer frequency, file sizes, failures, security
   concerns, procurement constraints, and willingness to pay.
 - [ ] Identify one primary initial customer profile and one secondary profile.
-- [ ] Write the top three jobs-to-be-done and explicit reasons UniDrop wins.
+- [ ] Write the top three jobs-to-be-done and explicit reasons Xendfile wins.
 - [ ] Maintain a competitor matrix covering local-only, remote transfer, mobile,
   CLI, native integration, team controls, security claims, pricing, and support.
 
@@ -737,7 +748,7 @@ responsibly, and create a measurable learning loop.
 
 ## Phase 6 completion gate
 
-- [ ] UniDrop is publicly downloadable, signed, independently reviewed,
+- [ ] Xendfile is publicly downloadable, signed, independently reviewed,
   supportable, legally and operationally prepared, and used repeatedly by a
   defined customer segment.
 - [ ] At least three real customers pay for validated Pro or Teams value.
@@ -748,7 +759,7 @@ responsibly, and create a measurable learning loop.
 
 # Final Startup Readiness Gate
 
-UniDrop is a legitimate SaaS startup—not merely a working application—when all of
+Xendfile is a legitimate SaaS startup—not merely a working application—when all of
 the following are true:
 
 - [ ] Free local transfers remain reliable without an account or cloud dependency.
@@ -761,7 +772,7 @@ the following are true:
   tested recovery.
 - [ ] Legal, privacy, billing, support, and deletion workflows match actual product
   behavior.
-- [ ] A specific customer segment repeatedly uses UniDrop and pays for the SaaS
+- [ ] A specific customer segment repeatedly uses Xendfile and pays for the SaaS
   value.
 - [ ] Marketing claims are precise, current, and supported by evidence.
 
@@ -769,10 +780,14 @@ the following are true:
 
 These items may block completion and cannot be fabricated or bypassed by code:
 
-- [ ] Approve the open-source and trademark policy.
+- [x] Approve the open-source and trademark policy.
+  Apache-2.0 and `TRADEMARKS.md` were approved on July 30, 2026.
 - [ ] Create or provide the Apple Developer account and signing access.
+  No account/access is currently available; unsigned development builds only.
 - [ ] Create or provide the Microsoft Partner Center/signing account.
+  No account/access is currently available; unsigned development builds only.
 - [ ] Approve making the production landing page publicly accessible.
+  Deferred for now; keep the Sites deployment owner-only.
 - [ ] Approve domain purchases and company/brand registrations.
 - [ ] Engage qualified legal, tax, export-compliance, insurance, and security
   professionals where identified above.

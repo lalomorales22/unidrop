@@ -5,12 +5,12 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const defaultRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const root = process.env.UNIDROP_FLATPAK_ROOT ? path.resolve(process.env.UNIDROP_FLATPAK_ROOT) : defaultRoot;
-const appID = 'io.github.lalomorales22.unidrop';
+const root = process.env.XENDFILE_FLATPAK_ROOT ? path.resolve(process.env.XENDFILE_FLATPAK_ROOT) : defaultRoot;
+const appID = 'io.github.lalomorales22.xendfile';
 const manifestPath = path.join(root, `${appID}.json`);
 const desktopPath = path.join(root, 'linux', `${appID}.desktop`);
 const metainfoPath = path.join(root, 'linux', `${appID}.metainfo.xml`);
-const wrapperPath = path.join(root, 'linux', 'flatpak-wrapper.sh');
+const wrapperPath = path.join(root, 'linux', 'xendfile-flatpak-wrapper.sh');
 
 function fail(message) {
   console.error(`Flatpak validation failed: ${message}`);
@@ -35,12 +35,12 @@ requireValue(manifest.runtime === 'org.freedesktop.Platform', 'unexpected runtim
 requireValue(manifest['runtime-version'] === '25.08', 'runtime must remain on the documented development branch');
 requireValue(manifest.sdk === 'org.freedesktop.Sdk', 'unexpected SDK');
 requireValue(JSON.stringify(manifest['sdk-extensions']) === JSON.stringify(['org.freedesktop.Sdk.Extension.golang']), 'only the Go SDK extension is allowed');
-requireValue(manifest.command === 'unidrop-flatpak', 'unexpected application command');
+requireValue(manifest.command === 'xendfile-flatpak', 'unexpected application command');
 requireValue(typeof manifest['x-comment'] === 'string' && manifest['x-comment'].includes('not a Flathub submission'), 'development-only boundary must be explicit');
 
 const expectedPermissions = [
   '--share=network',
-  '--filesystem=xdg-download/UniDrop:create',
+  '--filesystem=xdg-download/Xendfile:create',
   '--talk-name=org.kde.StatusNotifierWatcher',
   '--talk-name=org.freedesktop.StatusNotifierWatcher',
   '--own-name=org.kde.StatusNotifierItem-*',
@@ -59,7 +59,7 @@ requireValue(buildEnvironment?.GOFLAGS === '-buildvcs=false', 'Flatpak build mus
 
 requireValue(Array.isArray(manifest.modules) && manifest.modules.length === 1, 'manifest must contain one auditable source module');
 const module = manifest.modules[0];
-requireValue(module.name === 'unidrop' && module.buildsystem === 'simple', 'unexpected build module');
+requireValue(module.name === 'xendfile' && module.buildsystem === 'simple', 'unexpected build module');
 requireValue(Array.isArray(module.sources) && module.sources.length === 1, 'build must have one local source');
 const source = module.sources[0];
 requireValue(source.type === 'dir' && source.path === '.', 'development build must use the local source tree');
@@ -72,8 +72,9 @@ for (const required of [
   'go1.26.5',
   'go test -mod=vendor ./...',
   'go build -mod=vendor -trimpath',
-  './cmd/unidrop-tray',
-  './cmd/unidrop-update',
+  './cmd/xendfile-tray',
+  './cmd/xendfile-update',
+  'install -Dm644 LICENSE /app/share/licenses/xendfile/LICENSE',
   'desktop-file-validate',
   'appstreamcli validate --no-net',
 ]) {
@@ -82,19 +83,19 @@ for (const required of [
 
 const desktop = fs.readFileSync(desktopPath, 'utf8');
 requireValue(desktop.startsWith('[Desktop Entry]\n'), 'desktop file header is invalid');
-requireValue(desktop.includes('\nExec=unidrop-flatpak\n'), 'desktop file command does not use the wrapper');
+requireValue(desktop.includes('\nExec=xendfile-flatpak\n'), 'desktop file command does not use the wrapper');
 requireValue(desktop.includes(`\nIcon=${appID}\n`), 'desktop icon does not match the application ID');
 requireValue(desktop.endsWith('\n'), 'desktop file needs a final newline');
 
 const metainfo = fs.readFileSync(metainfoPath, 'utf8');
 requireValue(metainfo.includes(`<id>${appID}</id>`), 'Metainfo ID does not match the manifest');
 requireValue(metainfo.includes(`<launchable type="desktop-id">${appID}.desktop</launchable>`), 'Metainfo launchable does not match the desktop file');
-requireValue(metainfo.includes('<project_license>LicenseRef-proprietary</project_license>'), 'Metainfo must not claim an unapproved client license');
+requireValue(metainfo.includes('<project_license>Apache-2.0</project_license>'), 'Metainfo must declare the approved Apache-2.0 client license');
 requireValue(metainfo.includes('__VERSION__') && metainfo.includes('__RELEASE_DATE__'), 'Metainfo release placeholders are missing');
 
 const wrapper = fs.readFileSync(wrapperPath, 'utf8');
 requireValue(wrapper.startsWith('#!/bin/sh\nset -eu\n'), 'wrapper must be a fail-closed POSIX shell script');
-requireValue(wrapper.includes('CORE=/app/bin/unidrop') && wrapper.includes('TRAY=/app/bin/unidrop-tray'), 'wrapper does not use packaged binaries');
+requireValue(wrapper.includes('CORE=/app/bin/xendfile') && wrapper.includes('TRAY=/app/bin/xendfile-tray'), 'wrapper does not use packaged binaries');
 requireValue(wrapper.includes('trap cleanup EXIT HUP INT TERM'), 'wrapper does not clean up the core');
 
 console.log(`Verified development Flatpak manifest for ${appID}`);

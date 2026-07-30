@@ -1,6 +1,6 @@
 # Encryption export-compliance release gate
 
-This document records UniDrop's current cryptographic inventory and the decisions
+This document records Xendfile's current cryptographic inventory and the decisions
 that must be completed before a production macOS build is distributed. It is an
 engineering compliance checklist, not legal advice or a final commodity
 classification. The exporter remains responsible for the classification,
@@ -8,7 +8,7 @@ filings, destinations, end users, and end uses.
 
 ## Current technical determination
 
-UniDrop **uses and implements encryption**. The macOS application embeds the Go
+Xendfile **uses and implements encryption**. The macOS application embeds the Go
 standard library rather than limiting cryptography to Apple's operating-system
 APIs. It therefore must not be described as an application that uses no
 encryption or only encryption supplied by the Apple operating system.
@@ -23,13 +23,13 @@ The current product contains:
 - Ed25519 signatures and SHA-256 hashes for release metadata and artifacts; and
 - HTTPS for update metadata and artifact downloads.
 
-The algorithms are published industry-standard primitives. UniDrop also combines
+The algorithms are published industry-standard primitives. Xendfile also combines
 them in its own pairing protocol. That protocol is public in the repository but
 has not been standardized or independently reviewed. An exporter or qualified
 export professional must decide whether any part is "non-standard cryptography"
 under the applicable rules; this repository does not claim that determination.
 
-UniDrop does not currently encrypt stored file contents or provide a general
+Xendfile does not currently encrypt stored file contents or provide a general
 cryptographic library, SDK, cryptanalytic tool, government-specific feature, or
 user-modifiable cryptographic interface. Those facts must be rechecked against
 the shipping revision rather than assumed from this document.
@@ -79,7 +79,7 @@ replace the export classification or any required BIS submission.
 If a future release uses App Store Connect, the Account Holder, Admin, or App
 Manager must complete Apple's encryption questions before review. The shipping
 binary is not limited to Apple operating-system encryption, so that shortcut does
-not describe UniDrop. Apple's current documentation says an app using an industry
+not describe Xendfile. Apple's current documentation says an app using an industry
 standard algorithm outside the operating system may require a French encryption
 declaration for distribution in France, while proprietary or non-standard
 encryption may require both a U.S. CCATS and the French declaration.
@@ -101,7 +101,7 @@ The production-release evidence must include all of the following:
 | Classification | ECCN or documented reason the item is outside the relevant controls |
 | Authorization | Applicable ENC paragraph, NLR basis, license, or other authorization |
 | Mass-market analysis | Product availability, audience, price, support, and customizability |
-| Non-standard crypto decision | Written conclusion addressing the UniDrop pairing protocol |
+| Non-standard crypto decision | Written conclusion addressing the Xendfile pairing protocol |
 | Submission/report | CCATS identifier, notification evidence, or annual-report obligation |
 | Destinations | Approved markets plus denied/restricted destination and end-user controls |
 | Apple answer | App Store Connect determination and plist values, if that channel is used |
@@ -115,7 +115,7 @@ needed for the release audit trail.
 
 A production release is blocked until the owner has approved the license and a
 qualified exporter or export-control professional has completed the required
-record above. The gate must be repeated when UniDrop adds or materially changes
+record above. The gate must be repeated when Xendfile adds or materially changes
 cryptographic algorithms, pairing, remote relay, end-to-end encryption, key
 management, product editions, distribution countries, or the exporter of record.
 
