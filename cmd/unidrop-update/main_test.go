@@ -193,6 +193,7 @@ func TestUpdateManifestAbuseCasesFailClosed(t *testing.T) {
 	tests := map[string]func(*updateFixture, *updateOptions){
 		"unsigned envelope":  func(f *updateFixture, _ *updateOptions) { f.signatureBytes = []byte(`{}`) },
 		"manifest tamper":    func(f *updateFixture, _ *updateOptions) { f.manifestBytes = append(f.manifestBytes, ' ') },
+		"wrong platform":     func(f *updateFixture, _ *updateOptions) { f.manifest.Artifacts[0].Platform = "darwin"; f.resign() },
 		"wrong architecture": func(f *updateFixture, _ *updateOptions) { f.manifest.Artifacts[0].Architecture = "arm64"; f.resign() },
 		"protocol downgrade": func(f *updateFixture, _ *updateOptions) {
 			f.manifest.ProtocolVersion = 1
@@ -207,6 +208,20 @@ func TestUpdateManifestAbuseCasesFailClosed(t *testing.T) {
 			f.manifest.PublishedAt = fixedUpdateTime.Add(time.Hour).Format(time.RFC3339)
 			f.resign()
 		},
+		"excessive validity window": func(f *updateFixture, _ *updateOptions) {
+			f.manifest.ExpiresAt = fixedUpdateTime.Add(maximumValidity + time.Hour).Format(time.RFC3339)
+			f.resign()
+		},
+		"malformed compatibility floor": func(f *updateFixture, _ *updateOptions) {
+			f.manifest.MinimumCompatibleVersion = "not-a-version"
+			f.manifest.Artifacts[0].MinimumCompatibleVersion = "not-a-version"
+			f.resign()
+		},
+		"lowered compatibility floor": func(f *updateFixture, _ *updateOptions) {
+			f.manifest.MinimumCompatibleVersion = "0.1.0"
+			f.manifest.Artifacts[0].MinimumCompatibleVersion = "0.1.0"
+			f.resign()
+		},
 		"installed rollback": func(f *updateFixture, _ *updateOptions) {
 			f.manifest.Version = "0.3.3"
 			f.manifest.Tag = "v0.3.3"
@@ -214,6 +229,22 @@ func TestUpdateManifestAbuseCasesFailClosed(t *testing.T) {
 		},
 		"accepted rollback": func(_ *updateFixture, o *updateOptions) { o.HighestVersion = "0.5.0" },
 		"revoked release":   func(f *updateFixture, _ *updateOptions) { f.manifest.RevokedVersions = []string{"0.4.0"}; f.resign() },
+		"duplicate revocation": func(f *updateFixture, _ *updateOptions) {
+			f.manifest.RevokedVersions = []string{"0.2.0", "0.2.0"}
+			f.resign()
+		},
+		"malformed revocation": func(f *updateFixture, _ *updateOptions) {
+			f.manifest.RevokedVersions = []string{"v0.2.0"}
+			f.resign()
+		},
+		"oversized artifact": func(f *updateFixture, _ *updateOptions) {
+			f.manifest.Artifacts[0].Size = (1 << 20) + 1
+			f.resign()
+		},
+		"unsafe artifact name": func(f *updateFixture, _ *updateOptions) {
+			f.manifest.Artifacts[0].Name = "../unidrop"
+			f.resign()
+		},
 		"unapproved URL": func(f *updateFixture, _ *updateOptions) {
 			f.manifest.Artifacts[0].URL = "https://example.com/unidrop-linux-amd64"
 			f.resign()
@@ -230,6 +261,29 @@ func TestUpdateManifestAbuseCasesFailClosed(t *testing.T) {
 			mutate(fixture, &options)
 			if _, err := fixture.stage(t, options); err == nil {
 				t.Fatal("unsafe update was accepted")
+			}
+		})
+	}
+}
+
+func TestOversizedMetadataIsRejectedWithoutChangingState(t *testing.T) {
+	tests := map[string]func(*updateFixture){
+		"manifest":  func(f *updateFixture) { f.manifestBytes = make([]byte, maxManifestBytes+1) },
+		"signature": func(f *updateFixture) { f.signatureBytes = make([]byte, maxSignatureBytes+1) },
+	}
+	for name, configure := range tests {
+		t.Run(name, func(t *testing.T) {
+			fixture := newUpdateFixture(t)
+			configure(fixture)
+			root := t.TempDir()
+			_, err := stageUpdate(context.Background(), fixture.server.Client(),
+				fixture.server.URL+"/manifest.json", fixture.server.URL+"/manifest.sig.json",
+				fixture.trustedKeys(), fixture.options(), filepath.Join(root, "stage"), filepath.Join(root, "state", "update.json"))
+			if err == nil || !strings.Contains(err.Error(), "size limit") {
+				t.Fatalf("oversized %s error = %v", name, err)
+			}
+			if entries, readErr := os.ReadDir(root); readErr != nil || len(entries) != 0 {
+				t.Fatalf("oversized metadata changed local state: entries=%v err=%v", entries, readErr)
 			}
 		})
 	}
@@ -408,5 +462,29 @@ func TestStagingDirectoryRejectsSymlink(t *testing.T) {
 	}
 	if err := ensurePrivateDirectory(link); err == nil {
 		t.Fatal("symlink staging directory was accepted")
+	}
+}
+
+func TestUpdateStateRejectsSymlinkAndPublicPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation and POSIX modes are not portable to Windows")
+	}
+	root := t.TempDir()
+	realState := filepath.Join(root, "real-state.json")
+	if err := os.WriteFile(realState, []byte(`{"highestAcceptedVersion":"0.4.0","acceptedAt":"2026-07-30T16:00:00Z"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "state-link.json")
+	if err := os.Symlink(realState, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readHighestAccepted(link); err == nil {
+		t.Fatal("symlink update state was accepted")
+	}
+	if err := os.Chmod(realState, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readHighestAccepted(realState); err == nil {
+		t.Fatal("publicly readable update state was accepted")
 	}
 }
