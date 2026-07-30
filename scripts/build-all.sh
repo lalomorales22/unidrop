@@ -3,7 +3,7 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
 DIST_DIR="$SCRIPT_DIR/dist"
-VERSION=${UNIDROP_VERSION:-0.3.2}
+VERSION=${UNIDROP_VERSION:-0.3.3}
 
 command -v go >/dev/null 2>&1 || { printf '%s\n' 'Go is required to build release binaries.' >&2; exit 1; }
 mkdir -p "$DIST_DIR"
@@ -26,6 +26,14 @@ build_tray() {
     -mod=vendor -trimpath -ldflags="-s -w -X main.appVersion=$VERSION" -o "$output" ./cmd/unidrop-tray)
 }
 
+build_windows_tray() {
+  target_arch=$1
+  output="$DIST_DIR/unidrop-tray-windows-$target_arch.exe"
+  printf 'Building Windows notification-area companion/%s...\n' "$target_arch"
+  (cd "$SCRIPT_DIR" && CGO_ENABLED=0 GOOS=windows GOARCH="$target_arch" go build \
+    -mod=vendor -trimpath -ldflags="-s -w -H=windowsgui -X main.appVersion=$VERSION" -o "$output" ./cmd/unidrop-tray-windows)
+}
+
 build darwin amd64 ''
 build darwin arm64 ''
 build linux amd64 ''
@@ -34,6 +42,8 @@ build_tray amd64
 build_tray arm64
 build windows amd64 '.exe'
 build windows arm64 '.exe'
+build_windows_tray amd64
+build_windows_tray arm64
 
 if [ "$(uname -s)" = "Darwin" ] && command -v xcrun >/dev/null 2>&1 && xcrun --find swiftc >/dev/null 2>&1; then
   "$SCRIPT_DIR/scripts/build-macos-menu.sh"

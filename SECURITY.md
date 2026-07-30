@@ -1,6 +1,6 @@
 # UniDrop security model
 
-UniDrop v0.3.2 is designed for direct file sharing between computers on the same trusted or semi-trusted local network. It encrypts transfers, requires an explicit first pairing, and asks the receiver before accepting file bytes by default. It is not yet an audited replacement for AirDrop in a hostile enterprise network.
+UniDrop v0.3.3 is designed for direct file sharing between computers on the same trusted or semi-trusted local network. It encrypts transfers, requires an explicit first pairing, and asks the receiver before accepting file bytes by default. It is not yet an audited replacement for AirDrop in a hostile enterprise network.
 
 ## Protections implemented
 
@@ -17,6 +17,7 @@ UniDrop v0.3.2 is designed for direct file sharing between computers on the same
 - control API bound to loopback and mutating requests protected against ordinary cross-origin browser requests
 - command bridge bound to loopback and authenticated with a random 256-bit user-only token
 - Linux tray mutations and shutdown authenticated with that same user-only control token
+- Windows notification-area mutations and shutdown authenticated with that same user-only control token
 - short-lived transfer offers bound to sender identity, safe filename, and exact content length
 - explicit **Accept/Decline** receiver approval by default, with receiving-off and trusted-device modes
 - macOS local-network purpose string and LaunchAgent-to-bundle association
@@ -41,12 +42,12 @@ Discovery announcements contain the device ID, display name, operating system fa
 - Availability is not guaranteed against a hostile LAN peer that floods the HTTPS port or discovery group.
 - Tokens are protected by OS user permissions, not a hardware keystore/keychain yet.
 - Transfer completion currently relies on TLS/TCP integrity and byte count; an explicit final content digest is planned.
-- macOS receiver approvals appear directly in the native menu-bar popover. Linux highlights pending requests in the tray and opens the local approval panel. Windows still uses the local control panel until its tray shell is implemented.
+- macOS receiver approvals appear directly in the native menu-bar popover. Linux and Windows highlight pending requests in their native status shells and open the local approval panel.
 - A Linux tray icon requires the desktop session to provide a StatusNotifier/AppIndicator host. The application-menu and browser panel remain the fallback.
 
 ## Dependency and CVE policy
 
-The transfer core imports only Go standard-library packages. The macOS shell links only Apple’s system AppKit, Foundation, and WebKit frameworks. The Linux tray pins `github.com/godbus/dbus/v5` v5.2.2 (BSD-2-Clause) and its `golang.org/x/sys` v0.44.0 module dependency. Both are vendored, so no package manager or third-party download runs during installation or application startup. The current Linux tray binary links `godbus`; the upstream `x/sys` import is FreeBSD-only and is not linked into UniDrop's supported Linux targets.
+The transfer core and Windows Win32 shell import only Go standard-library packages; the Windows shell calls `user32.dll`, `shell32.dll`, `kernel32.dll`, and `gdi32.dll` supplied by the operating system. The macOS shell links only Apple’s system AppKit, Foundation, and WebKit frameworks. The Linux tray pins `github.com/godbus/dbus/v5` v5.2.2 (BSD-2-Clause) and its `golang.org/x/sys` v0.44.0 module dependency. Both are vendored, so no package manager or third-party download runs during installation or application startup. The current Linux tray binary links `godbus`; the upstream `x/sys` import is FreeBSD-only and is not linked into UniDrop's supported Linux targets.
 
 The exact module versions were queried against OSV on July 30, 2026, with no known vulnerabilities returned. The older transitive `x/sys` v0.27.0 pin was explicitly rejected because it is affected by `GO-2026-5024`; UniDrop overrides it with the fixed v0.44.0 release even though that advisory's vulnerable symbol is Windows-only.
 

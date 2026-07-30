@@ -87,12 +87,15 @@ The token in `control-token` prevents an unrelated web page from invoking filesy
 
 ### Windows
 
-- Install target: `%LOCALAPPDATA%\UniDrop\unidrop.exe`
+- Install target: `%LOCALAPPDATA%\UniDrop\unidrop.exe` plus `unidrop-tray.exe`
 - Startup: per-user Startup shortcut
 - Application launcher: per-user Start-menu shortcut
 - Configuration: `%APPDATA%\UniDrop`
-- User actions: Windows URL/file protocol handler opens the control panel and receive folder
-- Future tray: a small native adapter built on `Shell_NotifyIcon`
+- Native shell: pure-Go Win32 hidden window plus `Shell_NotifyIconW`, without .NET, WebView2, or Electron
+- Dynamic states: nearby count, pending approvals, reconnecting, attention icon, and request balloons
+- User actions: Open, receive-mode selection, received files, and authenticated Quit
+- Process model: the GUI-subsystem tray starts and monitors the console-capable secure core
+- Recovery: stable single instance and automatic icon restoration after Windows Explorer restarts
 
 ## Protocol surface
 
@@ -108,8 +111,8 @@ Files are deliberately sent as raw request bodies rather than multipart forms. T
 
 ## Roadmap
 
-1. Native Windows tray adapter with **Open**, **Receive mode**, and **Quit**.
-2. Finder, Explorer, Dolphin, Nautilus, and Thunar **Send with UniDrop** entry points backed by the command bridge.
+1. Finder, Explorer, Dolphin, Nautilus, and Thunar **Send with UniDrop** entry points backed by the command bridge.
+2. Optional compact Windows WebView2 panel with browser fallback.
 3. Signed/notarized installers and an update manifest with binary checksums.
 4. Optional QR pairing and a stronger PAKE-based short-code mode.
 5. Folder transfer through a streamed, validated archive format.

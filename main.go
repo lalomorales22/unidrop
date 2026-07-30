@@ -38,7 +38,7 @@ import (
 	"time"
 )
 
-var appVersion = "0.3.2"
+var appVersion = "0.3.3"
 
 const (
 	protocolVersion  = 2
@@ -388,6 +388,8 @@ func runStopCLI() int {
 	}
 	if runtime.GOOS == "linux" {
 		_ = exec.Command("pkill", "-TERM", "-x", "unidrop-tray").Run()
+	} else if runtime.GOOS == "windows" {
+		_ = exec.Command("taskkill", "/IM", "unidrop-tray.exe", "/F").Run()
 	}
 	fmt.Println("UniDrop: stopped the background service and desktop shell.")
 	return 0
@@ -415,6 +417,16 @@ func startManagedServices() bool {
 		return exec.Command("launchctl", "bootstrap", fmt.Sprintf("gui/%d", os.Getuid()), plist).Run() == nil
 	case "linux":
 		return exec.Command("systemctl", "--user", "start", "unidrop.service", "unidrop-tray.service").Run() == nil
+	case "windows":
+		executable, err := os.Executable()
+		if err != nil {
+			return false
+		}
+		tray := filepath.Join(filepath.Dir(executable), "unidrop-tray.exe")
+		if info, err := os.Stat(tray); err != nil || !info.Mode().IsRegular() {
+			return false
+		}
+		return exec.Command(tray).Start() == nil
 	default:
 		return false
 	}

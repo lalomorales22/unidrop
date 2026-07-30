@@ -3,7 +3,7 @@
 # It installs per-user, needs no sudo, and never downloads third-party modules.
 set -eu
 
-APP_VERSION="0.3.2"
+APP_VERSION="0.3.3"
 GO_VERSION="1.26.5"
 MIN_GO_VERSION="1.25.0"
 SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)

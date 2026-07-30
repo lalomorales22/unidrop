@@ -2,9 +2,9 @@
 
 UniDrop is a working cross-platform local file sender for macOS, Linux, and Windows. It discovers nearby computers, pairs them with a one-time key, and streams files directly over a TLS 1.3 connection. There is no cloud upload and no account.
 
-The secure engine and responsive interface are intentionally contained in [`main.go`](main.go). macOS adds a tiny AppKit/WebKit menu-bar shell, and Linux adds a tiny pure-Go StatusNotifier/AppIndicator shell. UniDrop uses no third-party runtime, npm tree, Electron bundle, database, or system package installed with sudo.
+The secure engine and responsive interface are intentionally contained in [`main.go`](main.go). macOS adds a tiny AppKit/WebKit menu-bar shell, Linux adds a pure-Go StatusNotifier/AppIndicator shell, and Windows adds a pure-Go Win32 notification-area shell. UniDrop uses no third-party runtime, npm tree, Electron bundle, database, or system package installed with sudo.
 
-## What works in v0.3.2
+## What works in v0.3.3
 
 - macOS, Linux, and Windows secure core binaries from one source file
 - automatic peer discovery on the same LAN using local multicast
@@ -13,6 +13,8 @@ The secure engine and responsive interface are intentionally contained in [`main
 - native Linux AppIndicator/StatusNotifier tray icon with a live status menu
 - nearby, pending-approval, reconnecting, and attention states in the Linux tray
 - Linux tray controls for opening UniDrop, receive mode, received files, and Quit
+- native Windows notification-area icon with the same live status and receive controls
+- Windows single-instance startup, Explorer-restart recovery, and incoming-request balloons
 - Bonjour-assisted Mac-to-Mac discovery plus resilient multicast retry
 - nearby-device and pending-approval count in the menu bar
 - compact nearly-black UI designed for the menu-bar popover
@@ -59,11 +61,11 @@ If a compatible Go release is already installed, the installer uses it. Otherwis
 
 Go 1.26.5 is intentionally pinned because it is the current July 2026 security release and includes the latest fixes in `crypto/tls` and `os`. See the [Go release history](https://go.dev/doc/devel/release) and [Go vulnerability database](https://pkg.go.dev/vuln/).
 
-The macOS installer includes a SHA-256-pinned universal menu-bar binary built from the checked-in Swift source, so Xcode is not required. If that binary is intentionally omitted, the installer can rebuild it with Apple’s Swift compiler. Linux builds its small tray companion from vendored source. No third-party package is downloaded during installation.
+The macOS installer includes a SHA-256-pinned universal menu-bar binary built from the checked-in Swift source, so Xcode is not required. If that binary is intentionally omitted, the installer can rebuild it with Apple’s Swift compiler. Linux builds its small tray companion from vendored source. Windows builds its Win32 companion entirely from the standard library. No third-party package is downloaded during installation.
 
 ## Use
 
-1. Open UniDrop on both computers. On macOS, click the ⇅ menu-bar icon. On Linux, click the UniDrop tray icon. The full panel remains available at [http://127.0.0.1:43337](http://127.0.0.1:43337).
+1. Open UniDrop on both computers. On macOS, click the ⇅ menu-bar icon. On Linux or Windows, click the UniDrop notification-area icon. The full panel remains available at [http://127.0.0.1:43337](http://127.0.0.1:43337).
 2. UniDrop searches automatically. Choose the nearby device that appears.
 3. Copy the one-time pairing key shown by the receiver, paste it on the sender, and press **Pair**.
 4. Drop one or more files and press **Send**.
@@ -114,7 +116,7 @@ Incoming behavior is controlled from the receiver panel:
 |---|---|---|---|
 | macOS | `~/Applications/UniDrop.app` plus a LaunchAgent | `~/Downloads/UniDrop` | Native menu-bar popover, Bonjour discovery, count badge, compact UI, notifications |
 | Linux | application-menu entry plus systemd user services or XDG autostart | `~/Downloads/UniDrop` | Native StatusNotifier/AppIndicator tray, live menu, generated state icon, notifications, browser panel on click |
-| Windows | Start-menu and Startup shortcuts; command added to user PATH | `%USERPROFILE%\Downloads\UniDrop` | Browser control panel; private-network firewall prompt may appear |
+| Windows | Start-menu and Startup shortcuts; command added to user PATH | `%USERPROFILE%\Downloads\UniDrop` | Native Win32 notification-area icon, live menu, generated state icon, request balloons, browser panel on click |
 
 The Linux tray speaks the [Freedesktop StatusNotifierItem protocol](https://specifications.freedesktop.org/status-notifier-item/latest-single/) directly over the user's D-Bus session. It appears on desktops with a StatusNotifier/AppIndicator host. On desktops without one, UniDrop keeps running securely and remains available from the application menu or browser URL. No legacy tray library is installed automatically.
 
@@ -126,6 +128,16 @@ journalctl --user -u unidrop-tray.service -n 30 --no-pager
 ```
 
 A healthy companion logs either `tray registered` or the explicit `no StatusNotifier host found` fallback message.
+
+The Windows companion uses the operating system's `Shell_NotifyIconW` notification-area API directly. Left-click opens UniDrop; right-click shows status, receive modes, received files, and Quit. It writes diagnostics to `%APPDATA%\UniDrop\tray.log` and automatically restores its icon when Windows Explorer restarts.
+
+If the Windows icon is missing, inspect the installed processes and companion log from PowerShell:
+
+```powershell
+Get-Process unidrop, unidrop-tray -ErrorAction SilentlyContinue
+Get-Content "$env:APPDATA\UniDrop\tray.log" -Tail 30
+Get-Content "$env:APPDATA\UniDrop\core.log" -Tail 30
+```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the OS breakdown, [SECURITY.md](SECURITY.md) for the threat model, and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the two vendored Linux tray modules.
 
@@ -156,4 +168,4 @@ The release builder also writes `dist/SHA256SUMS`, which both installers verify 
 
 UniDrop is currently for devices on the same local IP network. It does not open router ports, use UPnP, or provide an internet relay.
 
-Protocol v2 is used by UniDrop v0.2 through v0.3.2. Upgrade both computers together; v0.1 peers are intentionally ignored because v0.1 did not negotiate receiver approval before sending bytes.
+Protocol v2 is used by UniDrop v0.2 through v0.3.3. Upgrade both computers together; v0.1 peers are intentionally ignored because v0.1 did not negotiate receiver approval before sending bytes.

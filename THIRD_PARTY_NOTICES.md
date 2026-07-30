@@ -1,6 +1,6 @@
 # Third-party notices
 
-UniDrop's transfer core and browser interface use only the Go standard library. The Linux tray companion includes these vendored source modules:
+UniDrop's transfer core, browser interface, and native Windows notification-area companion use only the Go standard library and operating-system APIs. The Linux tray companion includes these vendored source modules:
 
 | Module | Version | License | Purpose |
 |---|---:|---|---|
