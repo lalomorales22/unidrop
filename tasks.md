@@ -167,7 +167,7 @@ download, install, verify, update, and remove.
 ## 1.5 Secure updates
 
 - [x] Design and document a signed update-manifest format with key rotation.
-- [ ] Reject unsigned manifests, hash mismatches, wrong architectures, protocol
+- [x] Reject unsigned manifests, hash mismatches, wrong architectures, protocol
   downgrades, expired metadata, and rollback attempts.
 - [ ] Download updates to a temporary location, verify them before execution, and
   preserve the last working version for recovery.

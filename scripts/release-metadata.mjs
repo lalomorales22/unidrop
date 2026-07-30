@@ -35,6 +35,8 @@ function componentFor(name) {
   if (match) return { component: "tray", platform: match[1], architecture: match[2] };
   match = name.match(/^unidrop-menu-darwin-(amd64|arm64)$/);
   if (match) return { component: "menu", platform: "darwin", architecture: match[1] };
+  match = name.match(/^unidrop-update-(darwin|linux|windows)-(amd64|arm64)(?:\.exe)?$/);
+  if (match) return { component: "updater", platform: match[1], architecture: match[2] };
   if (name.endsWith(".spdx.json")) return { component: "sbom", platform: "all", architecture: "all" };
   return { component: "release-metadata", platform: "all", architecture: "all" };
 }
@@ -66,6 +68,7 @@ const commit = process.env.GITHUB_SHA || gitValue("rev-parse", "HEAD");
 const commitDate = process.env.SOURCE_DATE_EPOCH
   ? new Date(Number(process.env.SOURCE_DATE_EPOCH) * 1000).toISOString()
   : new Date(gitValue("show", "-s", "--format=%cI", "HEAD")).toISOString();
+const expiresAt = new Date(new Date(commitDate).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
 const sbomName = `unidrop-${version}.spdx.json`;
 const manifestName = `unidrop-${version}-manifest.json`;
 
@@ -161,8 +164,11 @@ const manifest = {
   version,
   tag,
   sourceCommit: commit,
+  publishedAt: commitDate,
+  expiresAt,
   protocolVersion: protocol,
   minimumCompatibleVersion,
+  revokedVersions: [],
   artifacts
 };
 await writeFile(join(dist, manifestName), `${JSON.stringify(manifest, null, 2)}\n`);

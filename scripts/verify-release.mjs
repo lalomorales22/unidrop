@@ -38,10 +38,20 @@ for (const name of (await readdir(dist)).sort()) {
 const manifestName = `unidrop-${version}-manifest.json`;
 const manifest = JSON.parse(await readFile(join(dist, manifestName), "utf8"));
 if (manifest.version !== version || manifest.tag !== `v${version}`) fail("manifest version does not match the canonical version");
+if (!Number.isFinite(Date.parse(manifest.publishedAt)) || !Number.isFinite(Date.parse(manifest.expiresAt))) fail("manifest validity window is invalid");
+if (Date.parse(manifest.expiresAt) <= Date.parse(manifest.publishedAt)) fail("manifest expires before it is published");
+if (!Array.isArray(manifest.revokedVersions)) fail("manifest revoked-version list is missing");
 if (manifest.protocolVersion !== protocol) fail("manifest protocol version does not match");
 if (manifest.minimumCompatibleVersion !== minimumCompatibleVersion) fail("manifest minimum compatible version does not match");
 if (!/^[a-f0-9]{40}$/.test(manifest.sourceCommit)) fail("manifest source commit is invalid");
 if (!Array.isArray(manifest.artifacts) || manifest.artifacts.length < 11) fail("manifest is missing release artifacts");
+for (const platform of ["darwin", "linux", "windows"]) {
+  for (const architecture of ["amd64", "arm64"]) {
+    if (!manifest.artifacts.some((artifact) => artifact.component === "updater" && artifact.platform === platform && artifact.architecture === architecture)) {
+      fail(`manifest is missing updater for ${platform}/${architecture}`);
+    }
+  }
+}
 
 const artifactNames = new Set();
 for (const artifact of manifest.artifacts) {

@@ -1,14 +1,17 @@
 # Signed update metadata design
 
-Automatic update installation is not enabled in the alpha client. This document
-defines the fail-closed format and acceptance rules that must be implemented and
-tested before it is enabled.
+Automatic update installation is not enabled in the alpha client. The
+dependency-free `cmd/unidrop-update` helper implements signed metadata acceptance
+and non-executable artifact staging; native signature verification, replacement,
+health checks, recovery, and user preferences must still be completed before an
+installer invokes it automatically.
 
 ## Release manifest
 
 `scripts/release-metadata.mjs` creates canonical JSON containing schema version,
 product version, immutable Git tag and source commit, protocol version, minimum
-compatible client version, and a sorted artifact list. Each artifact binds its
+compatible client version, publication and expiration timestamps, a signed
+revoked-version list, and a sorted artifact list. Each artifact binds its
 URL, component, platform, architecture, byte size, and SHA-256 digest.
 
 `cmd/unidrop-release` signs the exact manifest bytes with Ed25519. Its detached
@@ -59,3 +62,19 @@ downgrade, expired/future metadata, rollback and freeze attempts, redirect and U
 confusion, oversized responses, partial/corrupt downloads, offline startup,
 interrupted replacement, health-check failure, and preservation of the previous
 working version.
+
+## Manual staging during development
+
+The helper is intentionally separate from the running client until native
+package verification and recovery are complete. A developer with the reviewed
+release public key can exercise the full metadata and artifact-verification path:
+
+```sh
+go run ./cmd/unidrop-update stage \
+  --manifest-url https://github.com/lalomorales22/unidrop/releases/download/vVERSION/unidrop-VERSION-manifest.json \
+  --public-key release/release-public.pem
+```
+
+Success writes a private, non-executable staging file and advances the local
+highest-accepted-version record. It does not execute the file, request elevated
+privileges, replace the installed client, or remove the last working version.
