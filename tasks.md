@@ -182,7 +182,7 @@ download, install, verify, update, and remove.
 - [ ] Make the production landing page public after explicit owner approval.
 - [ ] Point Mac, Windows, and Linux buttons at real release assets rather than the
   source archive.
-- [ ] Detect operating system and architecture without preventing manual choices.
+- [x] Detect operating system and architecture without preventing manual choices.
 - [ ] Add version, file size, checksum, installation instructions, system
   requirements, release notes, privacy policy, and source links.
 - [ ] Add a short product demo and authentic screenshots from all three platforms.

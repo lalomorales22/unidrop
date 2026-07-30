@@ -188,6 +188,8 @@
     .recommend-badge { position: absolute; top: -9px; left: 16px; display: none; padding: 3px 7px; border-radius: 999px; background: var(--mint); color: #03120d; font-size: 9px; font-weight: 850; letter-spacing: .06em; text-transform: uppercase; }
     .recommended .recommend-badge { display: block; }
     .download-note { margin: 13px auto 0; color: #676975; font-size: 11px; }
+    .detected-system { min-height: 20px; margin: 10px auto 0; color: #a5a7b3; font-size: 12px; }
+    .detected-system strong { color: var(--mint); font-weight: 760; }
 
     .product-stage {
       position: relative;
@@ -327,6 +329,18 @@
     .copy-button { position: absolute; top: 9px; right: 9px; width: 29px; height: 29px; border: 1px solid var(--line); border-radius: 8px; background: #101119; color: #9799a6; cursor: pointer; }
     .copy-button:hover { color: var(--ink); border-color: var(--line-bright); }
 
+    .release-grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 16px; margin-top: 54px; }
+    .release-card { padding: 28px; border: 1px solid var(--line); border-radius: 24px; background: var(--panel); }
+    .release-card h3 { margin: 0; font-size: 22px; letter-spacing: -.03em; }
+    .release-card > p { margin: 13px 0 0; color: var(--muted); font-size: 14px; line-height: 1.65; }
+    .fact-list { display: grid; gap: 0; margin: 24px 0 0; padding: 0; list-style: none; }
+    .fact-list li { display: grid; grid-template-columns: minmax(110px, .42fr) 1fr; gap: 18px; padding: 14px 0; border-top: 1px solid var(--line); color: #c9cad3; font-size: 13px; line-height: 1.5; }
+    .fact-list strong { color: var(--dim); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+    .release-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+    .release-links a { padding: 9px 12px; border: 1px solid var(--line); border-radius: 11px; color: #c9cad3; text-decoration: none; font-size: 12px; font-weight: 700; }
+    .release-links a:hover { border-color: var(--line-bright); background: rgba(255,255,255,.03); }
+    .alpha-callout { margin-top: 22px; padding: 16px; border: 1px solid rgba(255,190,91,.2); border-radius: 14px; background: rgba(255,175,59,.055); color: #d5c3a8; font-size: 12px; line-height: 1.6; }
+
     .oss { display: grid; grid-template-columns: 1.05fr .95fr; align-items: center; gap: 60px; }
     .oss-card { padding: 26px; border: 1px solid var(--line); border-radius: 26px; background: var(--panel); box-shadow: var(--shadow); }
     .repo-top { display: flex; align-items: center; gap: 12px; }
@@ -358,7 +372,7 @@
     @media (max-width: 900px) {
       .nav-links a:not(.github-link) { display: none; }
       .hero { padding-top: 72px; }
-      .downloads, .steps, .install-grid { grid-template-columns: 1fr; }
+      .downloads, .steps, .install-grid, .release-grid { grid-template-columns: 1fr; }
       .downloads { max-width: 540px; }
       .product-stage { min-height: 590px; }
       .stage-inner { min-height: 588px; }
@@ -413,6 +427,7 @@
         <a href="#how">How it works</a>
         <a href="#security">Security</a>
         <a href="#install">Install</a>
+        <a href="#release">Release facts</a>
         <a class="github-link" href="https://github.com/lalomorales22/unidrop" target="_blank" rel="noreferrer">GitHub</a>
       </div>
     </nav>
@@ -426,27 +441,28 @@
         <p class="lede">UniDrop gives macOS, Windows, and Linux one beautifully simple way to send files—directly, securely, and without putting them in somebody else's cloud.</p>
         <div class="hero-proof" aria-label="Product qualities"><span>No account</span><span>No cloud</span><span>No tracking</span><span>TLS 1.3</span></div>
 
-        <div class="downloads" aria-label="Download UniDrop">
-          <a class="download-card" data-download data-platform="mac" href="https://github.com/lalomorales22/unidrop/archive/refs/heads/main.zip" aria-label="Download UniDrop source installer for macOS">
+        <div class="downloads" aria-label="Get the UniDrop alpha source bundle">
+          <a class="download-card" data-download data-platform="mac" href="https://github.com/lalomorales22/unidrop/archive/refs/heads/main.zip" aria-label="Get the UniDrop alpha source installer for macOS">
             <span class="recommend-badge">Recommended</span>
             <span class="platform-icon mac">⌘</span>
-            <span class="download-copy"><small>macOS 13+</small><strong>Download for Mac</strong></span>
+            <span class="download-copy"><small>macOS 13+ · source alpha</small><strong>Install on Mac</strong></span>
             <span class="download-arrow">↓</span>
           </a>
-          <a class="download-card" data-download data-platform="windows" href="https://github.com/lalomorales22/unidrop/archive/refs/heads/main.zip" aria-label="Download UniDrop source installer for Windows">
+          <a class="download-card" data-download data-platform="windows" href="https://github.com/lalomorales22/unidrop/archive/refs/heads/main.zip" aria-label="Get the UniDrop alpha source installer for Windows">
             <span class="recommend-badge">Recommended</span>
             <span class="platform-icon windows" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-            <span class="download-copy"><small>Windows 10 / 11</small><strong>Download for Windows</strong></span>
+            <span class="download-copy"><small>Windows 10 / 11 · source alpha</small><strong>Install on Windows</strong></span>
             <span class="download-arrow">↓</span>
           </a>
-          <a class="download-card" data-download data-platform="linux" href="https://github.com/lalomorales22/unidrop/archive/refs/heads/main.zip" aria-label="Download UniDrop source installer for Linux">
+          <a class="download-card" data-download data-platform="linux" href="https://github.com/lalomorales22/unidrop/archive/refs/heads/main.zip" aria-label="Get the UniDrop alpha source installer for Linux">
             <span class="recommend-badge">Recommended</span>
             <span class="platform-icon linux">&gt;_</span>
-            <span class="download-copy"><small>Linux desktop</small><strong>Download for Linux</strong></span>
+            <span class="download-copy"><small>Linux desktop · source alpha</small><strong>Install on Linux</strong></span>
             <span class="download-arrow">↓</span>
           </a>
         </div>
         <p class="download-note">v{{VERSION}} source installer · AMD64 and ARM64 · per-user install</p>
+        <p class="detected-system" data-detected-system role="status" aria-live="polite">All platform choices remain available.</p>
 
         <div class="product-stage" aria-label="A file transferring securely between a Mac, Windows PC, and Linux computer">
           <div class="stage-inner">
@@ -523,6 +539,72 @@
       </div>
     </section>
 
+    <section class="section" id="release">
+      <div class="shell">
+        <p class="section-kicker">Know exactly what you are getting</p>
+        <h2>Release facts, without the fine-print fog.</h2>
+        <p class="section-intro">The current public download is a source-based alpha. Signed native packages and automatic updates are being built and will replace these links only after their trust checks pass.</p>
+        <div class="release-grid">
+          <article class="release-card">
+            <h3>UniDrop v{{VERSION}} alpha</h3>
+            <p>Local-network transfer is functional today. This is not yet the signed v0.4.0 beta distribution.</p>
+            <ul class="fact-list">
+              <li><strong>Systems</strong><span>macOS 13 or later, Windows 10 or 11, and modern Linux desktops</span></li>
+              <li><strong>Processors</strong><span>AMD64/x86-64 and ARM64, selected automatically when the installer builds the client</span></li>
+              <li><strong>Network</strong><span>Two computers on the same private Wi-Fi or Ethernet network; no account or cloud service</span></li>
+              <li><strong>Transfer limit</strong><span>20 GiB per regular file in this alpha; folders and resumable transfers are not yet available</span></li>
+              <li><strong>Privileges</strong><span>Per-user installation; root or administrator access is not required</span></li>
+            </ul>
+            <div class="release-links" aria-label="Release resources">
+              <a href="#release">Release notes</a>
+              <a href="https://github.com/lalomorales22/unidrop/blob/main/README.md">Installation guide</a>
+              <a href="#privacy">Client privacy notice</a>
+              <a href="https://github.com/lalomorales22/unidrop">Source code</a>
+            </div>
+          </article>
+          <aside class="release-card">
+            <h3>Verification status</h3>
+            <p>Each future tagged package will publish its byte size, SHA-256 checksum, signed manifest, SBOM, and build provenance beside the download.</p>
+            <div class="alpha-callout"><strong>Current alpha limitation:</strong> the source archive is delivered by GitHub and does not yet carry the planned UniDrop publisher signature. Do not treat it as a signed production release.</div>
+            <ul class="fact-list">
+              <li><strong>Telemetry</strong><span>None in the local client</span></li>
+              <li><strong>Account</strong><span>Not required</span></li>
+              <li><strong>Cloud storage</strong><span>Not used</span></li>
+              <li><strong>Support</strong><span><a href="mailto:security@southbayitsolutions.com">security@southbayitsolutions.com</a> for private security reports</span></li>
+            </ul>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="privacy">
+      <div class="shell">
+        <p class="section-kicker">Local means local</p>
+        <h2>The alpha client does not report back to us.</h2>
+        <p class="section-intro">UniDrop has no analytics, advertising, telemetry, crash-report upload, account tracking, or UniDrop-operated cloud storage. This notice covers the current local client, not a future hosted service.</p>
+        <div class="release-grid">
+          <article class="release-card">
+            <h3>Stored on your computer</h3>
+            <p>Your device identity and private key, paired-device trust records, preferences, recent local transfer status, and received files stay on the computer where UniDrop is installed.</p>
+            <ul class="fact-list">
+              <li><strong>Uninstall</strong><span>Identity and pairing data are preserved by default so reinstalling does not silently break trust. Explicit removal is available.</span></li>
+              <li><strong>Received files</strong><span>Stored in your selected download location and never removed by the uninstaller.</span></li>
+              <li><strong>Future services</strong><span>A separate notice will be required before any waitlist, account, relay, billing, or support service collects data.</span></li>
+            </ul>
+          </article>
+          <article class="release-card">
+            <h3>Visible on your local network</h3>
+            <p>Nearby devices can see the device name, identifier, operating-system family, port, protocol version, and certificate fingerprint required for discovery and pairing.</p>
+            <ul class="fact-list">
+              <li><strong>Paired devices</strong><span>Exchange filenames, sizes, transfer status, and the TLS-protected transfer stream.</span></li>
+              <li><strong>Network operator</strong><span>May observe IP addresses, ports, timing, and traffic volume, but not TLS-protected file contents.</span></li>
+              <li><strong>Full notice</strong><span><a href="https://github.com/lalomorales22/unidrop/blob/main/PRIVACY.md">Read the repository privacy notice</a></span></li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
     <section class="section">
       <div class="shell oss">
         <div>
@@ -550,16 +632,33 @@
   </main>
 
   <footer>
-    <div class="shell footer-row"><span>UniDrop v{{VERSION}} · Direct local file sharing</span><div class="footer-links"><a href="https://github.com/lalomorales22/unidrop/blob/main/SECURITY.md">Security</a><a href="https://github.com/lalomorales22/unidrop">GitHub</a></div></div>
+    <div class="shell footer-row"><span>UniDrop v{{VERSION}} alpha · Direct local file sharing</span><div class="footer-links"><a href="#privacy">Privacy</a><a href="https://github.com/lalomorales22/unidrop/blob/main/SECURITY.md">Security</a><a href="https://github.com/lalomorales22/unidrop">GitHub</a></div></div>
   </footer>
 
   <script>
-    (() => {
+    (async () => {
       const value = `${navigator.userAgentData?.platform || ""} ${navigator.platform || ""} ${navigator.userAgent || ""}`.toLowerCase();
       const platform = value.includes("win") ? "windows" : value.includes("mac") ? "mac" : value.includes("linux") ? "linux" : "";
+      let architecture = "";
+      if (navigator.userAgentData?.getHighEntropyValues) {
+        try {
+          const details = await navigator.userAgentData.getHighEntropyValues(["architecture", "bitness"]);
+          const raw = `${details.architecture || ""} ${details.bitness || ""}`.toLowerCase();
+          architecture = raw.includes("arm") ? "ARM64" : raw.includes("x86") || raw.includes("64") ? "AMD64" : "";
+        } catch {}
+      }
+      if (!architecture) {
+        architecture = /arm64|aarch64/.test(value) ? "ARM64" : /x86_64|x64|win64|amd64|intel/.test(value) ? "AMD64" : "";
+      }
       if (platform) {
         document.querySelector(`[data-platform="${platform}"]`)?.classList.add("recommended");
         document.querySelector(`[data-platform-card="${platform}"]`)?.setAttribute("aria-current", "true");
+      }
+      const names = { mac: "macOS", windows: "Windows", linux: "Linux" };
+      const detected = document.querySelector("[data-detected-system]");
+      if (detected && (platform || architecture)) {
+        const label = [names[platform], architecture].filter(Boolean).join(" · ");
+        detected.innerHTML = `Detected: <strong>${label}</strong>. All platform and architecture choices remain available.`;
       }
       document.querySelectorAll("[data-copy]").forEach((button) => {
         button.addEventListener("click", async () => {
