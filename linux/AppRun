@@ -1,0 +1,28 @@
+#!/bin/sh
+set -eu
+
+APP_ROOT=${APPDIR:-$(CDPATH= cd "$(dirname "$0")" && pwd)}
+CORE="$APP_ROOT/usr/bin/unidrop"
+TRAY="$APP_ROOT/usr/bin/unidrop-tray"
+
+case "${1:-}" in
+  --version)
+    exec "$CORE" --version
+    ;;
+  --cli)
+    shift
+    exec "$CORE" "$@"
+    ;;
+esac
+
+"$CORE" --no-open >/dev/null 2>&1 &
+CORE_PID=$!
+
+cleanup() {
+  if kill -0 "$CORE_PID" >/dev/null 2>&1; then
+    "$CORE" stop >/dev/null 2>&1 || kill "$CORE_PID" >/dev/null 2>&1 || :
+  fi
+}
+trap cleanup EXIT HUP INT TERM
+
+"$TRAY" "$@"

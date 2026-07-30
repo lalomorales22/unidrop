@@ -60,6 +60,20 @@ if (developmentDMG && (
 )) {
   fail("macOS development DMG metadata is invalid");
 }
+const appImages = manifest.artifacts.filter((artifact) => artifact.name.endsWith(".AppImage"));
+if (appImages.length > 0) {
+  for (const architecture of ["amd64", "arm64"]) {
+    const name = `unidrop-${version}-linux-${architecture}.AppImage`;
+    if (!appImages.some((artifact) =>
+      artifact.name === name &&
+      artifact.component === "package" &&
+      artifact.platform === "linux" &&
+      artifact.architecture === architecture
+    )) {
+      fail(`manifest is missing the verified Linux ${architecture} AppImage`);
+    }
+  }
+}
 
 const artifactNames = new Set();
 for (const artifact of manifest.artifacts) {

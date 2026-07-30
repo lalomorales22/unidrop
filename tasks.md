@@ -157,7 +157,7 @@ download, install, verify, update, and remove.
 
 ### Linux
 
-- [ ] Produce an AppImage with desktop file, icon, and AppStream metadata.
+- [x] Produce an AppImage with desktop file, icon, and AppStream metadata.
 - [ ] Create and lint a Flatpak manifest, then prepare a Flathub submission.
 - [ ] Evaluate `.deb` and `.rpm` only after AppImage/Flatpak are reliable.
 - [ ] Test GNOME, KDE Plasma, and at least one tray-host-limited desktop.
