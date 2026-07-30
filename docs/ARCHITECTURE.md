@@ -6,10 +6,10 @@ AirDrop is not simply Bluetooth file transfer. Apple combines identity services,
 
 The universal layer available on all three systems is IP networking. UniDrop therefore uses:
 
-1. UDP multicast to advertise a small device record on the local network.
+1. UDP multicast to advertise a small device record on each active IPv4 LAN interface.
 2. A local browser panel for choosing peers and files.
 3. TLS 1.3 over TCP for direct machine-to-machine streaming.
-4. Manual `host:port` entry as a deterministic fallback.
+4. Persistent, periodically rechecked `host:port` entries as a deterministic fallback.
 
 Bluetooth can later serve as a discovery or IP-bootstrap channel, but it should not be the bulk-data transport: platform APIs are fragmented and its throughput is substantially worse than Wi-Fi/Ethernet.
 

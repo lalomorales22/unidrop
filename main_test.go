@@ -246,6 +246,52 @@ func TestMenuSummaryReportsNearbyDevicesAndApprovals(t *testing.T) {
 	}
 }
 
+func TestManualPeerAddressPersistsAndIsActivelyRechecked(t *testing.T) {
+	root := t.TempDir()
+	a := testApp(t, filepath.Join(root, "a"), "Linux sender")
+	b := testApp(t, filepath.Join(root, "b"), "Mac receiver")
+	startTestApp(t, b)
+	address := b.publicListen.Addr().String()
+
+	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:43337/api/add-peer", strings.NewReader(`{"address":"`+address+`"}`))
+	request.Header.Set("X-UniDrop-UI", "1")
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	a.localMux().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("add manual peer returned %d: %s", response.Code, response.Body.String())
+	}
+
+	stateBytes, err := os.ReadFile(a.statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state savedState
+	if err := json.Unmarshal(stateBytes, &state); err != nil {
+		t.Fatal(err)
+	}
+	if len(state.ManualAddresses) != 1 || state.ManualAddresses[0] != address {
+		t.Fatalf("manual address was not persisted: %q", state.ManualAddresses)
+	}
+
+	a.mu.Lock()
+	peer := a.discovered[b.identity.ID]
+	peer.LastSeen = time.Now().Add(-peerLifetime - time.Second)
+	a.mu.Unlock()
+	if peerIsOnline(peer, time.Now()) {
+		t.Fatal("stale manual peer should be offline before its direct probe")
+	}
+	a.probeManualPeers(context.Background())
+
+	a.mu.RLock()
+	refreshed := a.discovered[b.identity.ID]
+	_, persisted := a.manualPeers[address]
+	a.mu.RUnlock()
+	if !persisted || !refreshed.Manual || !peerIsOnline(refreshed, time.Now()) {
+		t.Fatalf("manual peer was not refreshed: persisted=%v peer=%+v", persisted, refreshed)
+	}
+}
+
 func TestReceiveRejectsUnpairedSender(t *testing.T) {
 	a := testApp(t, t.TempDir(), "Receiver")
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/files?name=bad.txt", strings.NewReader("bad"))

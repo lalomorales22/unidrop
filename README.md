@@ -4,10 +4,11 @@ UniDrop is a working cross-platform local file sender for macOS, Linux, and Wind
 
 The secure engine and responsive interface are intentionally contained in [`main.go`](main.go). macOS adds a tiny AppKit/WebKit menu-bar shell, and Linux adds a tiny pure-Go StatusNotifier/AppIndicator shell. UniDrop uses no third-party runtime, npm tree, Electron bundle, database, or system package installed with sudo.
 
-## What works in v0.3.1
+## What works in v0.3.2
 
 - macOS, Linux, and Windows secure core binaries from one source file
 - automatic peer discovery on the same LAN using local multicast
+- interface-aware discovery across active Wi-Fi, Ethernet, and virtual adapters
 - native macOS menu-bar icon that stays running and opens a compact popover
 - native Linux AppIndicator/StatusNotifier tray icon with a live status menu
 - nearby, pending-approval, reconnecting, and attention states in the Linux tray
@@ -17,6 +18,7 @@ The secure engine and responsive interface are intentionally contained in [`main
 - compact nearly-black UI designed for the menu-bar popover
 - explicit **Pair** action; IP entry is now an expandable fallback
 - manual IP address fallback when a network blocks multicast
+- persistent manual peers with automatic direct health checks
 - mutual pairing with a 64-bit one-time key
 - TLS 1.3, certificate pinning, 256-bit bearer tokens, and pairing rate limits
 - receiver approval cards showing sender, filename, and size before any file bytes are accepted
@@ -154,4 +156,4 @@ The release builder also writes `dist/SHA256SUMS`, which both installers verify 
 
 UniDrop is currently for devices on the same local IP network. It does not open router ports, use UPnP, or provide an internet relay.
 
-Protocol v2 is used by UniDrop v0.2 through v0.3.1. Upgrade both computers together; v0.1 peers are intentionally ignored because v0.1 did not negotiate receiver approval before sending bytes.
+Protocol v2 is used by UniDrop v0.2 through v0.3.2. Upgrade both computers together; v0.1 peers are intentionally ignored because v0.1 did not negotiate receiver approval before sending bytes.

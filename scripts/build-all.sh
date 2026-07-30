@@ -3,7 +3,7 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
 DIST_DIR="$SCRIPT_DIR/dist"
-VERSION=${UNIDROP_VERSION:-0.3.1}
+VERSION=${UNIDROP_VERSION:-0.3.2}
 
 command -v go >/dev/null 2>&1 || { printf '%s\n' 'Go is required to build release binaries.' >&2; exit 1; }
 mkdir -p "$DIST_DIR"

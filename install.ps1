@@ -3,7 +3,7 @@
 param([switch]$NoStart)
 $ErrorActionPreference = 'Stop'
 
-$AppVersion = '0.3.1'
+$AppVersion = '0.3.2'
 $GoVersion = '1.26.5'
 $MinimumGoVersion = [version]'1.25.0'
 $ScriptDirectory = $PSScriptRoot

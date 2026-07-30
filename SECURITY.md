@@ -1,6 +1,6 @@
 # UniDrop security model
 
-UniDrop v0.3.1 is designed for direct file sharing between computers on the same trusted or semi-trusted local network. It encrypts transfers, requires an explicit first pairing, and asks the receiver before accepting file bytes by default. It is not yet an audited replacement for AirDrop in a hostile enterprise network.
+UniDrop v0.3.2 is designed for direct file sharing between computers on the same trusted or semi-trusted local network. It encrypts transfers, requires an explicit first pairing, and asks the receiver before accepting file bytes by default. It is not yet an audited replacement for AirDrop in a hostile enterprise network.
 
 ## Protections implemented
 

@@ -29,7 +29,7 @@ import (
 	"github.com/godbus/dbus/v5/prop"
 )
 
-var appVersion = "0.3.1"
+var appVersion = "0.3.2"
 
 const (
 	defaultUIURL = "http://127.0.0.1:43337/"

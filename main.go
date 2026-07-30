@@ -38,7 +38,7 @@ import (
 	"time"
 )
 
-var appVersion = "0.3.1"
+var appVersion = "0.3.2"
 
 const (
 	protocolVersion  = 2
@@ -47,7 +47,8 @@ const (
 	discoveryAddress = "239.255.77.77:43339"
 	maxRecent        = 60
 	defaultMaxBytes  = int64(20 << 30) // 20 GiB
-	peerLifetime     = 15 * time.Second
+	peerLifetime     = 30 * time.Second
+	manualProbeEvery = 10 * time.Second
 	offerLifetime    = 2 * time.Minute
 	maxPendingOffers = 100
 )
@@ -73,10 +74,11 @@ type TrustedPeer struct {
 }
 
 type savedState struct {
-	Identity    Identity                `json:"identity"`
-	DownloadDir string                  `json:"download_dir"`
-	Trusted     map[string]*TrustedPeer `json:"trusted_peers"`
-	ReceiveMode string                  `json:"receive_mode"`
+	Identity        Identity                `json:"identity"`
+	DownloadDir     string                  `json:"download_dir"`
+	Trusted         map[string]*TrustedPeer `json:"trusted_peers"`
+	ReceiveMode     string                  `json:"receive_mode"`
+	ManualAddresses []string                `json:"manual_addresses,omitempty"`
 }
 
 type discoveryPacket struct {
@@ -95,6 +97,7 @@ type DiscoveredPeer struct {
 	Address     string    `json:"address"`
 	Fingerprint string    `json:"fingerprint"`
 	LastSeen    time.Time `json:"last_seen"`
+	Manual      bool      `json:"-"`
 }
 
 type peerView struct {
@@ -161,6 +164,7 @@ type App struct {
 	identity     Identity
 	trusted      map[string]*TrustedPeer
 	discovered   map[string]*DiscoveredPeer
+	manualPeers  map[string]struct{}
 	transfers    []*Transfer
 	offers       map[string]*IncomingOffer
 	attempts     map[string]*attemptWindow
@@ -260,6 +264,7 @@ func main() {
 		}()
 	}
 	go app.runDiscovery(ctx)
+	go app.runManualPeerChecks(ctx)
 	if *openOnly && runtime.GOOS == "linux" {
 		startLinuxTray(uiURL)
 	}
@@ -525,6 +530,7 @@ func newApp(uiAddress string) (*App, error) {
 	a := &App{
 		trusted:     make(map[string]*TrustedPeer),
 		discovered:  make(map[string]*DiscoveredPeer),
+		manualPeers: make(map[string]struct{}),
 		offers:      make(map[string]*IncomingOffer),
 		attempts:    make(map[string]*attemptWindow),
 		configDir:   configDir,
@@ -650,12 +656,25 @@ func (a *App) loadState() error {
 	if state.Trusted != nil {
 		a.trusted = state.Trusted
 	}
+	for _, address := range state.ManualAddresses {
+		if normalized, err := normalizePeerAddress(address); err == nil {
+			a.manualPeers[normalized] = struct{}{}
+		}
+	}
 	return nil
 }
 
 func (a *App) saveState() error {
 	a.mu.RLock()
-	state := savedState{Identity: a.identity, DownloadDir: a.downloadDir, Trusted: a.trusted, ReceiveMode: a.receiveMode}
+	manualAddresses := make([]string, 0, len(a.manualPeers))
+	for address := range a.manualPeers {
+		manualAddresses = append(manualAddresses, address)
+	}
+	sort.Strings(manualAddresses)
+	state := savedState{
+		Identity: a.identity, DownloadDir: a.downloadDir, Trusted: a.trusted,
+		ReceiveMode: a.receiveMode, ManualAddresses: manualAddresses,
+	}
 	b, err := json.MarshalIndent(state, "", "  ")
 	a.mu.RUnlock()
 	if err != nil {
@@ -935,7 +954,7 @@ func (a *App) handleLocalSummary(w http.ResponseWriter, r *http.Request) {
 	a.mu.RLock()
 	nearby := 0
 	for _, peer := range a.discovered {
-		if now.Sub(peer.LastSeen) <= peerLifetime {
+		if peerIsOnline(peer, now) {
 			nearby++
 		}
 	}
@@ -974,7 +993,7 @@ func (a *App) handlePeers(w http.ResponseWriter, r *http.Request) {
 	views := make([]peerView, 0, len(a.discovered))
 	seen := make(map[string]bool)
 	for id, peer := range a.discovered {
-		online := now.Sub(peer.LastSeen) <= peerLifetime
+		online := peerIsOnline(peer, now)
 		trusted := a.trusted[id]
 		views = append(views, peerView{
 			ID: id, Name: peer.Name, OS: peer.OS, Address: peer.Address,
@@ -1233,22 +1252,33 @@ func (a *App) handleAddPeer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
+	peer.Manual = true
+	a.mu.Lock()
+	a.manualPeers[peer.Address] = struct{}{}
+	a.mu.Unlock()
 	a.recordDiscovered(peer)
+	if err := a.saveState(); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, peer)
 }
 
 func (a *App) inspectAddress(raw string) (*DiscoveredPeer, error) {
-	address := strings.TrimSpace(raw)
-	address = strings.TrimPrefix(address, "https://")
-	address = strings.TrimSuffix(address, "/")
-	if !strings.Contains(address, ":") {
-		address += fmt.Sprintf(":%d", defaultPeerPort)
-	}
-	if _, _, err := net.SplitHostPort(address); err != nil {
-		return nil, errors.New("enter an address such as 192.168.1.20:43338")
+	return a.inspectAddressContext(context.Background(), raw)
+}
+
+func (a *App) inspectAddressContext(ctx context.Context, raw string) (*DiscoveredPeer, error) {
+	address, err := normalizePeerAddress(raw)
+	if err != nil {
+		return nil, err
 	}
 	client := insecurePairClient(nil)
-	resp, err := client.Get("https://" + address + "/api/v1/info")
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+address+"/api/v1/info", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("connect to peer: %w", err)
 	}
@@ -1274,6 +1304,19 @@ func (a *App) inspectAddress(raw string) (*DiscoveredPeer, error) {
 		return nil, errors.New("peer certificate fingerprint does not match its identity response")
 	}
 	return &DiscoveredPeer{ID: info.ID, Name: cleanDisplayName(info.Name), OS: info.OS, Address: address, Fingerprint: info.Fingerprint, LastSeen: time.Now()}, nil
+}
+
+func normalizePeerAddress(raw string) (string, error) {
+	address := strings.TrimSpace(raw)
+	address = strings.TrimPrefix(address, "https://")
+	address = strings.TrimSuffix(address, "/")
+	if !strings.Contains(address, ":") {
+		address += fmt.Sprintf(":%d", defaultPeerPort)
+	}
+	if _, _, err := net.SplitHostPort(address); err != nil {
+		return "", errors.New("enter an address such as 192.168.1.20:43338")
+	}
+	return address, nil
 }
 
 func (a *App) handleLocalPair(w http.ResponseWriter, r *http.Request) {
@@ -1536,7 +1579,7 @@ func (a *App) resolveTarget(target string) (*readyPeerConnection, error) {
 	a.mu.RLock()
 	matches := make([]string, 0, 2)
 	for id, peer := range a.discovered {
-		if time.Since(peer.LastSeen) > peerLifetime {
+		if !peerIsOnline(peer, time.Now()) {
 			continue
 		}
 		host, _, _ := net.SplitHostPort(peer.Address)
@@ -1889,17 +1932,118 @@ func (a *App) discoverySession(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	conn, err := net.ListenMulticastUDP("udp4", nil, group)
+	bindings, err := multicastIPv4Bindings()
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
-	_ = conn.SetReadBuffer(64 << 10)
+	listeners := make([]*net.UDPConn, 0, len(bindings))
+	listenerNames := make([]string, 0, len(bindings))
+	listenErrors := make([]string, 0)
+	for _, binding := range bindings {
+		conn, listenErr := net.ListenMulticastUDP("udp4", &binding.Interface, group)
+		if listenErr != nil {
+			listenErrors = append(listenErrors, binding.Interface.Name+": "+listenErr.Error())
+			continue
+		}
+		_ = conn.SetReadBuffer(64 << 10)
+		listeners = append(listeners, conn)
+		listenerNames = append(listenerNames, binding.Interface.Name)
+	}
+	if len(listeners) == 0 {
+		return fmt.Errorf("join multicast on LAN interfaces: %s", strings.Join(listenErrors, "; "))
+	}
+	defer func() {
+		for _, listener := range listeners {
+			_ = listener.Close()
+		}
+	}()
 	sessionContext, cancel := context.WithCancel(ctx)
 	defer cancel()
 	announceErrors := make(chan error, 1)
 	go func() { announceErrors <- a.announceLoop(sessionContext, group) }()
+	datagrams := make(chan discoveryDatagram, 64)
+	for _, listener := range listeners {
+		go readDiscoveryDatagrams(sessionContext, listener, datagrams)
+	}
 	a.setDiscoveryStatus("active", nil)
+	log.Printf("automatic discovery listening on %s", strings.Join(listenerNames, ", "))
+	for {
+		var datagram discoveryDatagram
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case announceErr := <-announceErrors:
+			return announceErr
+		case datagram = <-datagrams:
+			if datagram.Err != nil {
+				return datagram.Err
+			}
+		}
+		var packet discoveryPacket
+		if err := json.Unmarshal(datagram.Data, &packet); err != nil || packet.Version != protocolVersion || packet.ID == a.identity.ID {
+			continue
+		}
+		if !validID(packet.ID) || !validFingerprint(packet.Fingerprint) || packet.Port < 1 || packet.Port > 65535 {
+			continue
+		}
+		peer := &DiscoveredPeer{
+			ID: packet.ID, Name: cleanDisplayName(packet.Name), OS: packet.OS,
+			Address:     net.JoinHostPort(datagram.Source.IP.String(), strconv.Itoa(packet.Port)),
+			Fingerprint: packet.Fingerprint, LastSeen: time.Now(),
+		}
+		a.recordDiscovered(peer)
+	}
+}
+
+type multicastBinding struct {
+	Interface net.Interface
+	IPv4      []net.IP
+}
+
+type discoveryDatagram struct {
+	Data   []byte
+	Source *net.UDPAddr
+	Err    error
+}
+
+func multicastIPv4Bindings() ([]multicastBinding, error) {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return nil, fmt.Errorf("list network interfaces: %w", err)
+	}
+	bindings := make([]multicastBinding, 0, len(interfaces))
+	for _, networkInterface := range interfaces {
+		if networkInterface.Flags&net.FlagUp == 0 || networkInterface.Flags&net.FlagMulticast == 0 || networkInterface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addresses, addressErr := networkInterface.Addrs()
+		if addressErr != nil {
+			continue
+		}
+		ipv4 := make([]net.IP, 0, len(addresses))
+		for _, address := range addresses {
+			var ip net.IP
+			switch value := address.(type) {
+			case *net.IPNet:
+				ip = value.IP
+			case *net.IPAddr:
+				ip = value.IP
+			}
+			if ip4 := ip.To4(); ip4 != nil && !ip4.IsLoopback() && !ip4.IsUnspecified() {
+				ipv4 = append(ipv4, append(net.IP(nil), ip4...))
+			}
+		}
+		if len(ipv4) > 0 {
+			bindings = append(bindings, multicastBinding{Interface: networkInterface, IPv4: ipv4})
+		}
+	}
+	if len(bindings) == 0 {
+		return nil, errors.New("no active multicast-capable IPv4 LAN interface")
+	}
+	return bindings, nil
+}
+
+func readDiscoveryDatagrams(ctx context.Context, conn *net.UDPConn, output chan<- discoveryDatagram) {
 	buffer := make([]byte, 4096)
 	for {
 		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
@@ -1908,28 +2052,23 @@ func (a *App) discoverySession(ctx context.Context) error {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				select {
 				case <-ctx.Done():
-					return ctx.Err()
-				case announceErr := <-announceErrors:
-					return announceErr
+					return
 				default:
 					continue
 				}
 			}
-			return err
+			select {
+			case output <- discoveryDatagram{Err: err}:
+			case <-ctx.Done():
+			}
+			return
 		}
-		var packet discoveryPacket
-		if err := json.Unmarshal(buffer[:n], &packet); err != nil || packet.Version != protocolVersion || packet.ID == a.identity.ID {
-			continue
+		data := append([]byte(nil), buffer[:n]...)
+		select {
+		case output <- discoveryDatagram{Data: data, Source: source}:
+		case <-ctx.Done():
+			return
 		}
-		if !validID(packet.ID) || !validFingerprint(packet.Fingerprint) || packet.Port < 1 || packet.Port > 65535 {
-			continue
-		}
-		peer := &DiscoveredPeer{
-			ID: packet.ID, Name: cleanDisplayName(packet.Name), OS: packet.OS,
-			Address:     net.JoinHostPort(source.IP.String(), strconv.Itoa(packet.Port)),
-			Fingerprint: packet.Fingerprint, LastSeen: time.Now(),
-		}
-		a.recordDiscovered(peer)
 	}
 }
 
@@ -1947,6 +2086,12 @@ func (a *App) setDiscoveryStatus(status string, err error) {
 func (a *App) recordDiscovered(peer *DiscoveredPeer) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if _, manual := a.manualPeers[peer.Address]; manual {
+		peer.Manual = true
+	}
+	if existing := a.discovered[peer.ID]; existing != nil && existing.Manual {
+		peer.Manual = true
+	}
 	if _, exists := a.discovered[peer.ID]; !exists && len(a.discovered) >= 256 {
 		var oldestID string
 		var oldestTime time.Time
@@ -1964,6 +2109,45 @@ func (a *App) recordDiscovered(peer *DiscoveredPeer) {
 		}
 	}
 	a.discovered[peer.ID] = peer
+}
+
+func peerIsOnline(peer *DiscoveredPeer, now time.Time) bool {
+	return peer != nil && !peer.LastSeen.IsZero() && now.Sub(peer.LastSeen) <= peerLifetime
+}
+
+func (a *App) runManualPeerChecks(ctx context.Context) {
+	for {
+		a.probeManualPeers(ctx)
+		timer := time.NewTimer(manualProbeEvery)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
+}
+
+func (a *App) probeManualPeers(ctx context.Context) {
+	a.mu.RLock()
+	addresses := make([]string, 0, len(a.manualPeers))
+	for address := range a.manualPeers {
+		addresses = append(addresses, address)
+	}
+	a.mu.RUnlock()
+	for _, address := range addresses {
+		if ctx.Err() != nil {
+			return
+		}
+		probeContext, cancel := context.WithTimeout(ctx, 5*time.Second)
+		peer, err := a.inspectAddressContext(probeContext, address)
+		cancel()
+		if err != nil {
+			continue
+		}
+		peer.Manual = true
+		a.recordDiscovered(peer)
+	}
 }
 
 func (a *App) announceLoop(ctx context.Context, group *net.UDPAddr) error {
@@ -2326,7 +2510,7 @@ body.compact{background:#020304}body.compact main{width:100%;padding:12px}body.c
 <body><main>
 <header class="top"><div class="brand"><div class="logo">⇄</div><div><h1>UniDrop</h1><p id="deviceName">Secure local file sharing</p></div></div><button class="button" onclick="openDownloads()">Open received files</button></header>
 <div class="grid">
-<section class="card" id="nearbyCard"><div class="sectionhead"><h2>Nearby devices</h2><span class="live"><i></i><span id="discoveryLabel">Searching automatically</span></span></div><div id="devices" class="devices"><div class="empty"><span class="radar"></span><strong>Searching nearby…</strong><span class="small">UniDrop scans this network automatically.</span></div></div><details class="fallback"><summary>Connect by address instead</summary><div class="manual"><input id="manual" placeholder="Other Mac's address, e.g. 192.168.0.25:43338"><button onclick="addPeer()">Add</button></div><div class="addresshint" id="addressHint"></div></details></section>
+<section class="card" id="nearbyCard"><div class="sectionhead"><h2>Nearby devices</h2><span class="live"><i></i><span id="discoveryLabel">Searching automatically</span></span></div><div id="devices" class="devices"><div class="empty"><span class="radar"></span><strong>Searching nearby…</strong><span class="small">UniDrop scans this network automatically.</span></div></div><details class="fallback"><summary>Connect by address instead</summary><div class="manual"><input id="manual" placeholder="Other device address, e.g. 192.168.0.25:43338"><button onclick="addPeer()">Add</button></div><div class="addresshint" id="addressHint"></div></details></section>
 <aside class="card" id="pairCard"><h2>Pair this device</h2><div class="muted small paircopy">Use this one-time key on the sending device.</div><div id="code" class="code">----&nbsp;----&nbsp;----&nbsp;----</div><button class="ghost small" onclick="copyCode()">Copy key</button> <button class="ghost small" onclick="rotateCode()">Rotate</button><div class="muted small" style="margin-top:13px">TLS 1.3 • certificate pinning • local network only</div></aside>
 <section class="card wide" id="incomingCard"><div class="sectionhead"><h2>Incoming requests</h2><select id="receiveMode" class="mode" onchange="setReceiveMode()" aria-label="Receive mode"><option value="ask">Ask every time</option><option value="trusted">Auto-accept paired devices</option><option value="off">Receiving paused</option></select></div><div id="offers" class="offerlist"><div class="empty">No one is waiting to send you a file</div></div></section>
 <section class="card" id="sendCard"><h2>Send files <span id="selectedLabel" class="muted">— choose a device</span></h2><label class="drop" id="drop"><input id="files" type="file" multiple><strong>Drop files here</strong><span class="muted">or click to choose files</span></label><div class="sendbar"><input id="pairCode" maxlength="19" autocomplete="off" placeholder="Other device's pairing key"><button class="ghost pairaction" id="pairButton" onclick="pairNow()">Pair</button><button class="primary" id="send" onclick="sendSelected()">Send</button></div><div class="progress"><i id="progress"></i></div><div id="queue" class="muted small" style="margin-top:7px"></div></section>
@@ -2338,7 +2522,7 @@ const compact=new URLSearchParams(location.search).get('compact')==='1';document
 async function api(path,options={}){options.headers={...(options.headers||{}),'X-UniDrop-UI':'1'};const r=await fetch(path,options);let body={};try{body=await r.json()}catch{}if(!r.ok)throw new Error(body.error||r.statusText);return body}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function icon(os){return os==='darwin'?'●':os==='windows'?'⊞':os==='linux'?'◆':'◇'}
-async function refresh(){try{const [info,p,t,o]=await Promise.all([api('/api/info'),api('/api/peers'),api('/api/transfers'),api('/api/offers')]);peers=p;const online=p.filter(x=>x.online);$('deviceName').textContent=info.name+' • '+(online.length?online.length+' nearby':'scanning nearby');$('code').textContent=info.pairing_code;$('receiveMode').value=info.receive_mode;$('discoveryLabel').textContent=online.length?online.length+' found':info.discovery_status==='retrying'?'Retrying search':'Searching automatically';const addresses=(info.lan_addresses||[]).map(x=>x+':'+info.peer_port);$('addressHint').textContent=addresses.length?'This Mac: '+addresses.join(' • '):'Automatic search is on. Manual address is only a fallback.';renderPeers();renderTransfers(t);renderOffers(o)}catch(e){toast(e.message,false)}}
+async function refresh(){try{const [info,p,t,o]=await Promise.all([api('/api/info'),api('/api/peers'),api('/api/transfers'),api('/api/offers')]);peers=p;const online=p.filter(x=>x.online);$('deviceName').textContent=info.name+' • '+(online.length?online.length+' nearby':'scanning nearby');$('code').textContent=info.pairing_code;$('receiveMode').value=info.receive_mode;$('discoveryLabel').textContent=online.length?online.length+' found':info.discovery_status==='retrying'?'Retrying search':'Searching automatically';const addresses=(info.lan_addresses||[]).map(x=>x+':'+info.peer_port);$('addressHint').textContent=addresses.length?'This device: '+addresses.join(' • '):'Automatic search is on. Manual address is only a fallback.';renderPeers();renderTransfers(t);renderOffers(o)}catch(e){toast(e.message,false)}}
 function renderPeers(){const online=peers.filter(p=>p.online);if(!online.length){$('devices').innerHTML='<div class="empty"><span class="radar"></span><strong>Searching nearby…</strong><span class="small">Keep UniDrop open on the other computer.</span></div>';return}$('devices').innerHTML=online.map(p=>'<button class="device '+(selected===p.id?'selected':'')+'" data-peer="'+p.id+'"><span class="os">'+icon(p.os)+'</span><span><strong>'+esc(p.name)+'</strong><span class="status">'+(p.trusted?'Paired and ready':'Tap to pair')+'</span></span></button>').join('');document.querySelectorAll('[data-peer]').forEach(b=>b.onclick=()=>choose(b.dataset.peer))}
 function choose(id){selected=id;const p=peers.find(x=>x.id===id);$('selectedLabel').textContent=p?'— '+p.name:'';const needsPair=!p?.trusted;$('pairCode').style.display=needsPair?'block':'none';$('pairButton').style.display=needsPair?'block':'none';renderPeers()}
 function renderTransfers(items){$('transfers').innerHTML=items.length?items.slice(0,6).map(t=>'<div class="transfer"><strong>'+(t.direction==='send'?'↑':'↓')+' '+esc(t.file)+'</strong><span class="'+(t.status==='complete'?'good':t.status==='failed'?'bad':'muted')+'">'+esc(t.status)+'</span><span class="muted small">'+esc(t.peer)+'</span><span class="muted small">'+size(t.bytes)+'</span></div>').join(''):'<div class="empty">No transfers yet</div>'}
