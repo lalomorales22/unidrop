@@ -114,7 +114,7 @@ artifact-verification path:
 
 ```sh
 go run ./cmd/xendfile-update stage \
-  --manifest-url https://github.com/lalomorales22/unidrop/releases/download/vVERSION/xendfile-VERSION-manifest.json \
+  --manifest-url https://github.com/lalomorales22/xendfile/releases/download/vVERSION/xendfile-VERSION-manifest.json \
   --public-key release/release-public.pem
 ```
 

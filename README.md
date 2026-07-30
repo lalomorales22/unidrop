@@ -65,7 +65,7 @@ Guest Wi-Fi, client isolation, some corporate networks, VPNs, and strict firewal
 Clone the public repository on each computer:
 
 ```sh
-git clone https://github.com/lalomorales22/unidrop.git
+git clone https://github.com/lalomorales22/xendfile.git
 cd xendfile
 ```
 
@@ -399,4 +399,4 @@ name and logo policy.
 
 ## Feedback and contributing
 
-Issues, testing notes, and contributions are welcome at [github.com/lalomorales22/unidrop](https://github.com/lalomorales22/unidrop). When reporting discovery or tray problems, include the operating system, desktop environment, Xendfile version, whether the devices share the same subnet, and the relevant platform log excerpt.
+Issues, testing notes, and contributions are welcome at [github.com/lalomorales22/xendfile](https://github.com/lalomorales22/xendfile). When reporting discovery or tray problems, include the operating system, desktop environment, Xendfile version, whether the devices share the same subnet, and the relevant platform log excerpt.

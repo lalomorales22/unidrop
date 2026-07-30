@@ -65,7 +65,7 @@ if (checksumOnly) {
 const version = await textFile("VERSION");
 const protocol = Number(await textFile("PROTOCOL"));
 const minimumCompatibleVersion = await textFile("MIN_COMPATIBLE_VERSION");
-const repository = process.env.GITHUB_REPOSITORY || "lalomorales22/unidrop";
+const repository = process.env.GITHUB_REPOSITORY || "lalomorales22/xendfile";
 const tag = `v${version}`;
 const releaseBaseURL = process.env.XENDFILE_RELEASE_BASE_URL ||
   `https://github.com/${repository}/releases/download/${tag}`;

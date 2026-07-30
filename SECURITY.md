@@ -60,10 +60,10 @@ not replace the open independent protocol and cryptographic review.
 ## Reporting
 
 Do not post exploitable security details in a public issue. Submit a
-[private GitHub security advisory](https://github.com/lalomorales22/unidrop/security/advisories/new)
+[private GitHub security advisory](https://github.com/lalomorales22/xendfile/security/advisories/new)
 and include the affected version, platform, reproduction steps, impact, and a
 safe way to contact you. The public project contact is the repository's
-[issue tracker](https://github.com/lalomorales22/unidrop/issues) for
+[issue tracker](https://github.com/lalomorales22/xendfile/issues) for
 non-sensitive bugs and questions.
 
 The project aims to acknowledge private reports within three business days. That

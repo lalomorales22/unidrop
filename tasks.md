@@ -93,6 +93,8 @@ download, install, verify, update, and remove.
 - [x] Document that the Xendfile name and logo are not granted for confusing or
   impersonating distributions, if that is the owner's chosen trademark policy.
   The owner approved the policy recorded in `TRADEMARKS.md`.
+- [x] Rename the public GitHub repository and canonical source, security,
+  release, package-metadata, and website URLs to `lalomorales22/xendfile`.
 - [x] Search relevant trademark records and domain availability before spending
   materially on the brand.
 - [x] Add a public project contact, private security-reporting address, Code of

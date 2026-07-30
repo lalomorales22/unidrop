@@ -71,7 +71,7 @@ test('rejects a remote or unpinned application source', (t) => {
   mutateManifest(directory, (manifest) => {
     manifest.modules[0].sources[0] = {
       type: 'git',
-      url: 'https://github.com/lalomorales22/unidrop',
+      url: 'https://github.com/lalomorales22/xendfile',
       branch: 'main',
     };
   });
