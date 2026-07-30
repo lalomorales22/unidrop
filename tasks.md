@@ -137,9 +137,9 @@ download, install, verify, update, and remove.
 - [ ] Enroll the owner/company in the Apple Developer Program.
 - [x] Replace the checked-in portable menu binary with a reproducible signed build
   artifact or document why it remains necessary.
-- [ ] Enable Hardened Runtime with the minimum required entitlements.
+- [x] Enable Hardened Runtime with the minimum required entitlements.
 - [ ] Sign every nested executable and the final app with Developer ID.
-- [ ] Create a polished universal `.dmg` or signed `.pkg`.
+- [x] Create a polished universal `.dmg` or signed `.pkg`.
 - [ ] Submit with `notarytool`, inspect the notary log, staple the ticket, and test
   Gatekeeper behavior on a clean Mac.
 - [ ] Determine and document encryption export-compliance requirements.

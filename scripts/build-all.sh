@@ -8,6 +8,7 @@ GO_BINARY=${GO_CMD:-go}
 
 command -v "$GO_BINARY" >/dev/null 2>&1 || { printf '%s\n' 'Go is required to build release binaries.' >&2; exit 1; }
 mkdir -p "$DIST_DIR"
+rm -f "$DIST_DIR/unidrop-$VERSION-macos-universal.dmg"
 
 build() {
   target_os=$1
@@ -64,6 +65,10 @@ build_updater windows arm64 '.exe'
 
 if [ "$(uname -s)" = "Darwin" ] && command -v xcrun >/dev/null 2>&1 && xcrun --find swiftc >/dev/null 2>&1; then
   "$SCRIPT_DIR/scripts/build-macos-menu.sh"
+fi
+
+if [ "${UNIDROP_BUILD_DEVELOPMENT_DMG:-0}" = "1" ]; then
+  "$SCRIPT_DIR/scripts/build-macos-package.sh"
 fi
 
 command -v node >/dev/null 2>&1 || { printf '%s\n' 'Node.js is required to generate release metadata.' >&2; exit 1; }

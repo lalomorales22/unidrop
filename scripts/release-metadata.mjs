@@ -37,6 +37,9 @@ function componentFor(name) {
   if (match) return { component: "menu", platform: "darwin", architecture: match[1] };
   match = name.match(/^unidrop-update-(darwin|linux|windows)-(amd64|arm64)(?:\.exe)?$/);
   if (match) return { component: "updater", platform: match[1], architecture: match[2] };
+  if (/^unidrop-[0-9]+\.[0-9]+\.[0-9]+-macos-universal\.dmg$/.test(name)) {
+    return { component: "package", platform: "darwin", architecture: "universal" };
+  }
   if (name.endsWith(".spdx.json")) return { component: "sbom", platform: "all", architecture: "all" };
   return { component: "release-metadata", platform: "all", architecture: "all" };
 }

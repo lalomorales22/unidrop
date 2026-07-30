@@ -97,9 +97,15 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: false
       - name: Build every desktop target and release metadata
+        env:
+          UNIDROP_BUILD_DEVELOPMENT_DMG: "1"
         run: ./scripts/build-all.sh
       - name: Verify artifact hashes and metadata
-        run: node scripts/verify-release.mjs
+        shell: bash
+        run: |
+          version=$(tr -d '\r\n' < internal/version/VERSION)
+          test -f "dist/unidrop-$version-macos-universal.dmg"
+          node scripts/verify-release.mjs
 
   required:
     name: Required CI
