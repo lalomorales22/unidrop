@@ -107,10 +107,50 @@ jobs:
           test -f "dist/unidrop-$version-macos-universal.dmg"
           node scripts/verify-release.mjs
 
+  linux-appimage:
+    name: Linux AppImage (${{ matrix.go_arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            go_arch: amd64
+          - runner: ubuntu-24.04-arm
+            go_arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install reviewed Go toolchain
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Fetch reviewed AppImage tools and build twice reproducibly
+        env:
+          GO_CMD: ${{ env.GOROOT }}/bin/go
+          TARGET_ARCH: ${{ matrix.go_arch }}
+        shell: bash
+        run: |
+          tools="$RUNNER_TEMP/unidrop-appimage-tools"
+          ./scripts/fetch-appimage-tools.sh "$TARGET_ARCH" "$tools"
+          appimagetool=$(find "$tools" -maxdepth 1 -type f -name 'appimagetool-*.AppImage' -print -quit)
+          runtime=$(find "$tools" -maxdepth 1 -type f -name 'runtime-*' -print -quit)
+          APPIMAGETOOL="$appimagetool" APPIMAGE_RUNTIME="$runtime" ./scripts/build-linux-appimage.sh "$TARGET_ARCH"
+          version=$(tr -d '\r\n' < internal/version/VERSION)
+          artifact="dist/unidrop-$version-linux-$TARGET_ARCH.AppImage"
+          first_hash=$(sha256sum "$artifact" | awk '{print $1}')
+          APPIMAGETOOL="$appimagetool" APPIMAGE_RUNTIME="$runtime" ./scripts/build-linux-appimage.sh "$TARGET_ARCH"
+          second_hash=$(sha256sum "$artifact" | awk '{print $1}')
+          test "$first_hash" = "$second_hash"
+
   required:
     name: Required CI
     if: always()
-    needs: [go, website, release-build]
+    needs: [go, website, release-build, linux-appimage]
     runs-on: ubuntu-latest
     steps:
       - name: Confirm all required jobs passed

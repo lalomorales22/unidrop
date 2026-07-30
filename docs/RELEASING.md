@@ -49,6 +49,11 @@ approval gate are complete for that version.
    universal development DMG. That artifact is ad-hoc signed for structural CI
    checks only; it is not approved for public distribution.
 
+   On Linux, fetch the reviewed, hash-pinned AppImage tools into a temporary
+   directory and pass their paths to `scripts/build-linux-appimage.sh`. CI runs
+   this process natively and reproducibly for both AMD64 and ARM64; the trusted
+   tag workflow carries only those exact packages into the signed manifest.
+
 4. Build and test the signed native packages on clean macOS, Windows, and Linux
    machines. Verify install, launch, discovery, pairing, sending, receiving,
    upgrade, rollback rejection, uninstall, and reinstall.

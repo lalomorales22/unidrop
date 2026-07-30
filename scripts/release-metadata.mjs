@@ -40,6 +40,8 @@ function componentFor(name) {
   if (/^unidrop-[0-9]+\.[0-9]+\.[0-9]+-macos-universal\.dmg$/.test(name)) {
     return { component: "package", platform: "darwin", architecture: "universal" };
   }
+  match = name.match(/^unidrop-[0-9]+\.[0-9]+\.[0-9]+-linux-(amd64|arm64)\.AppImage$/);
+  if (match) return { component: "package", platform: "linux", architecture: match[1] };
   if (name.endsWith(".spdx.json")) return { component: "sbom", platform: "all", architecture: "all" };
   return { component: "release-metadata", platform: "all", architecture: "all" };
 }

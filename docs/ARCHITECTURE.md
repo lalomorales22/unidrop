@@ -135,6 +135,14 @@ The default ad-hoc identity proves package structure in CI only. A public releas
 still requires the separately configured Developer ID identity, notarization,
 stapling, and clean-machine Gatekeeper verification.
 
+Linux AppImages are assembled from an AppDir with the native core, tray, updater,
+desktop entry, scalable icon, AppStream metadata, and runtime license notice.
+AMD64 and ARM64 packages build and execute on matching clean GitHub runners. The
+AppRun entry point starts the core for that AppImage instance and keeps the tray
+in the foreground; `--cli` dispatches an explicit command to the bundled core.
+The AppStream project license remains `Proprietary` while the repository has no
+owner-approved client license and must change with the future `LICENSE` file.
+
 The trusted tag workflow is isolated from pull requests. It requires an annotated
 immutable version tag and protected Ed25519 signing key, signs the exact manifest
 bytes, requests short-lived GitHub OIDC/Sigstore provenance and SBOM attestations,

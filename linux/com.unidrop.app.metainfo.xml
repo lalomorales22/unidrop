@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.unidrop.app</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <!-- No client license has been granted yet. Replace this only after owner approval. -->
+  <project_license>Proprietary</project_license>
+  <name>UniDrop</name>
+  <summary>Send files securely across your local network</summary>
+  <description>
+    <p>UniDrop transfers files directly between macOS, Windows, and Linux computers on the same local network.</p>
+    <p>Pairing, receiver approval, TLS 1.3, and pinned device certificates keep transfers private without a cloud account.</p>
+  </description>
+  <launchable type="desktop-id">unidrop.desktop</launchable>
+  <url type="homepage">https://github.com/lalomorales22/unidrop</url>
+  <url type="bugtracker">https://github.com/lalomorales22/unidrop/issues</url>
+  <provides>
+    <binary>unidrop</binary>
+  </provides>
+  <releases>
+    <release version="__VERSION__" date="__RELEASE_DATE__"/>
+  </releases>
+</component>
