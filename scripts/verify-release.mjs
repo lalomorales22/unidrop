@@ -52,6 +52,14 @@ for (const platform of ["darwin", "linux", "windows"]) {
     }
   }
 }
+const developmentDMG = manifest.artifacts.find((artifact) => artifact.name === `unidrop-${version}-macos-universal.dmg`);
+if (developmentDMG && (
+  developmentDMG.component !== "package" ||
+  developmentDMG.platform !== "darwin" ||
+  developmentDMG.architecture !== "universal"
+)) {
+  fail("macOS development DMG metadata is invalid");
+}
 
 const artifactNames = new Set();
 for (const artifact of manifest.artifacts) {

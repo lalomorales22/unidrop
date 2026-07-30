@@ -45,6 +45,10 @@ approval gate are complete for that version.
    git diff --check
    ```
 
+   On macOS, set `UNIDROP_BUILD_DEVELOPMENT_DMG=1` to also produce and verify the
+   universal development DMG. That artifact is ad-hoc signed for structural CI
+   checks only; it is not approved for public distribution.
+
 4. Build and test the signed native packages on clean macOS, Windows, and Linux
    machines. Verify install, launch, discovery, pairing, sending, receiving,
    upgrade, rollback rejection, uninstall, and reinstall.

@@ -15,6 +15,10 @@ upgrade without human review.
 | `actions/setup-go` | v6.4.0 / `4a3601121dd01d1626a1e23e37211e3254c1c06c` | GitHub-maintained; MIT | GitHub repository advisory API returned no published advisories. | Approved with immutable commit pin, exact Go version, and cache disabled because dependencies are vendored. |
 | `actions/attest` | v4.1.0 / `59d89421af93a897026c735860bf21b6eb4f7b26` | GitHub-maintained; MIT | GitHub repository advisory API returned no published advisories. | Approved only in the trusted tag release workflow with scoped OIDC and attestation permissions. |
 
+The macOS icon and development DMG builders use only tools shipped with macOS
+and Xcode Command Line Tools (`qlmanage`, `sips`, `iconutil`, `lipo`, `plutil`,
+`codesign`, and `hdiutil`). No package or executable is downloaded for this path.
+
 Sources checked: the Go release history and downloads JSON, the Go vulnerability
 database/OSV API, the upstream action release tags and immutable Git objects, each
 action repository's license, and GitHub's repository security-advisory API.

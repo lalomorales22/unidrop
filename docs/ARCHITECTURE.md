@@ -128,6 +128,13 @@ rebuilds both macOS menu architectures when Swift is available, and produces a
 versioned manifest, SPDX 2.3 SBOM, and `SHA256SUMS` without third-party build
 packages.
 
+On macOS, `UNIDROP_BUILD_DEVELOPMENT_DMG=1` additionally creates a universal
+`UniDrop.app`, signs every nested executable and the app with Hardened Runtime,
+and builds a compressed DMG containing the app plus an Applications shortcut.
+The default ad-hoc identity proves package structure in CI only. A public release
+still requires the separately configured Developer ID identity, notarization,
+stapling, and clean-machine Gatekeeper verification.
+
 The trusted tag workflow is isolated from pull requests. It requires an annotated
 immutable version tag and protected Ed25519 signing key, signs the exact manifest
 bytes, requests short-lived GitHub OIDC/Sigstore provenance and SBOM attestations,
