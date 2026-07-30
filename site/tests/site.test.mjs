@@ -17,11 +17,28 @@ test("contains one download path for every supported desktop platform", () => {
 });
 
 test("contains product, security, installation, and accessibility essentials", () => {
-  for (const phrase of ["TLS 1.3", "No cloud", "How it works", "Install in minutes", "View source on GitHub"]) {
+  for (const phrase of ["TLS 1.3", "No cloud", "How it works", "Install in minutes", "View source on GitHub", "Release facts", "Client privacy notice"]) {
     assert.ok(html.includes(phrase), `missing ${phrase}`);
   }
   assert.ok(html.includes("prefers-reduced-motion"));
   assert.ok(html.includes("aria-label"));
+});
+
+test("detects platform and architecture while preserving manual choices", () => {
+  assert.match(html, /getHighEntropyValues\(\["architecture", "bitness"\]\)/);
+  assert.match(html, /ARM64/);
+  assert.match(html, /AMD64/);
+  assert.match(html, /All platform and architecture choices remain available/);
+  assert.equal((html.match(/data-download/g) || []).length, 3);
+});
+
+test("labels the unsigned source alpha honestly and links release resources", () => {
+  for (const phrase of ["source-based alpha", "does not yet carry the planned UniDrop publisher signature", "Release notes", "Installation guide", "Source code"]) {
+    assert.ok(html.includes(phrase), `missing ${phrase}`);
+  }
+  assert.match(html, /href="#release">Release notes/);
+  assert.match(html, /href="#privacy">Client privacy notice/);
+  assert.match(html, /blob\/main\/PRIVACY\.md/);
 });
 
 test("has no third-party scripts, trackers, or remote font dependencies", () => {
