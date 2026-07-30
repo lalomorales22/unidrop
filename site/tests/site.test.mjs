@@ -4,6 +4,7 @@ import test from "node:test";
 
 const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
 const mirroredVersion = (await readFile(new URL("../version.txt", import.meta.url), "utf8")).trim();
+const snapshot = JSON.parse(await readFile(new URL("../source-snapshot.json", import.meta.url), "utf8"));
 const canonicalURL = new URL("../../internal/version/VERSION", import.meta.url);
 const version = await access(canonicalURL)
   .then(() => readFile(canonicalURL, "utf8").then((value) => value.trim()))
@@ -36,9 +37,25 @@ test("labels the unsigned source alpha honestly and links release resources", ()
   for (const phrase of ["source-based alpha", "does not yet carry the planned UniDrop publisher signature", "Release notes", "Installation guide", "Source code"]) {
     assert.ok(html.includes(phrase), `missing ${phrase}`);
   }
-  assert.match(html, /href="#release">Release notes/);
+  assert.match(html, /docs\/RELEASE_NOTES\.md">Release notes/);
   assert.match(html, /href="#privacy">Client privacy notice/);
   assert.match(html, /blob\/main\/PRIVACY\.md/);
+});
+
+test("binds every alpha download to one immutable verified source snapshot", async () => {
+  assert.match(snapshot.commit, /^[a-f0-9]{40}$/);
+  assert.equal(snapshot.shortCommit, snapshot.commit.slice(0, 7));
+  assert.equal(snapshot.url, `https://github.com/lalomorales22/unidrop/archive/${snapshot.commit}.zip`);
+  assert.match(snapshot.sha256, /^[a-f0-9]{64}$/);
+  assert.ok(Number.isSafeInteger(snapshot.size) && snapshot.size > 0);
+  assert.doesNotMatch(html, /archive\/refs\/heads\/main\.zip/);
+  const built = await readFile(new URL("../dist/client/index.html", import.meta.url), "utf8");
+  assert.equal((built.match(new RegExp(snapshot.url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) || []).length, 3);
+  for (const value of [snapshot.commit, snapshot.shortCommit, String(snapshot.size), snapshot.displaySize, snapshot.sha256]) {
+    assert.ok(built.includes(value), `built site is missing snapshot value ${value}`);
+  }
+  assert.doesNotMatch(built, /\{\{(?:VERSION|SOURCE_SNAPSHOT_[A-Z_]+)\}\}/);
+  assert.doesNotMatch(built, /releases\/download|\.dmg\b|\.msix\b|\.AppImage\b/);
 });
 
 test("has no third-party scripts, trackers, or remote font dependencies", () => {

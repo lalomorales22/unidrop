@@ -36,6 +36,11 @@ future phases.
 | Update downloads | Remove corrupt or interrupted downloads and do not advance rollback state | `TestCorruptAndPartialDownloadsAreRemoved` |
 | Update state | Reject symlinked/insecure state and staging paths; advance highest-accepted version monotonically | `TestStagingDirectoryRejectsSymlink`, `TestUpdateStateRejectsSymlinkAndPublicPermissions`, `TestRollbackStateAdvancesAcrossMultipleWrites` |
 | Offline behavior | Leave startup/local state usable when the update endpoint is offline | `TestOfflineCheckDoesNotAffectStartupState` |
+| Update preferences | Default to notify-only; atomically persist only the three allowed modes; reject malformed, oversized, symlinked, or publicly readable state; restore an interrupted prior generation | `TestUpdatePreferenceDefaultsAndRoundTripsPrivately`, `TestInvalidUpdatePreferenceDoesNotReplacePriorValue`, `TestUpdatePreferenceStateAbuseCasesFailClosed`, `TestInterruptedPreferenceWriteRestoresPreviousGeneration`, `TestUpdatePreferenceRejectsSymlinkAndPublicPermissions` |
+| Replacement activation | Re-hash staged bytes, reject hard-linked staged/installed aliases, preserve the installed file until activation, retain the last working generation after health succeeds, and restore it when health fails | `TestVerifiedReplacementKeepsLastWorkingBackup`, `TestFailedReplacementHealthCheckRollsBackAndPreservesStableBackup`, `TestReplacementRejectsChangedStagedArtifactWithoutTouchingInstallation`, `TestReplacementRejectsHardLinkedStagedAndInstalledPaths` |
+| Interrupted replacement | Recover prepared, target-moved, replaced, and healthy journal phases idempotently; reject colliding journals and an altered pending backup without deleting the installed file | `TestInterruptedReplacementRecoveryIsPhaseAwareAndIdempotent`, `TestReplacementRecoveryRejectsTamperedStateWithoutTouchingInstalledFile`, `TestReplacementRecoveryRejectsChangedPendingBackupBeforeRemovingTarget`, `TestReplacementJournalRejectsSymlinkAndPublicPermissions` |
+| Development Flatpak | Lock the provisional app identity, offline vendored Go build, exact reviewed compiler, least-permission sandbox, local sources, desktop metadata, and wrapper; reject broad filesystem access, online module resolution, unpinned remote source, and identity drift | `scripts/verify-flatpak.mjs`, `scripts/verify-flatpak.test.mjs` |
+| Alpha website download | Bind all three platform choices to one immutable Git commit archive with an exact byte count and SHA-256; reject moving branch archives, unresolved metadata, and claims that signed native assets already exist | `site: binds every alpha download to one immutable verified source snapshot` |
 
 ## Verification boundary
 
@@ -45,7 +50,7 @@ website behavior, universal macOS packaging, and both native AppImage
 architectures. A green run proves the cases above executed on that revision; it
 does not replace the open tasks for an independent protocol review, real
 mixed-machine interoperability, Developer ID/notarization, Windows publisher
-trust, clean-machine release validation, or full update activation and recovery.
+trust, clean-machine release validation, or full native update activation.
 
 Run the local evidence with the reviewed toolchain:
 

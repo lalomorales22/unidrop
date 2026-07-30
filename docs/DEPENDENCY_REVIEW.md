@@ -31,3 +31,20 @@ repository security-advisory API.
 The action review intentionally excludes unpinned major-version references. When
 Dependabot proposes an action update, resolve the new tag to its immutable commit,
 repeat this review, update this table, and only then change the workflow pin.
+
+## Pending Flatpak toolchain — not approved for download
+
+The development manifest names the following future build environment, but none
+of it was downloaded, enabled in CI, or approved for release use on July 30,
+2026. Branch names are not immutable supply-chain pins.
+
+| Component | Development selection | Missing evidence | Decision |
+| --- | --- | --- | --- |
+| Flatpak and `flatpak-builder` | Unselected host versions | Exact version/package provenance, license inventory, maintainer status, current CVEs/advisories, and integrity mechanism | Block download and use. |
+| Freedesktop runtime and SDK | `25.08` branch | Exact commits, supported/EOL state, contents/SBOM, current advisories, and trusted remote summary/signature verification | Block download and use. |
+| Go SDK extension | `org.freedesktop.Sdk.Extension.golang` | Exact commit, license/content inventory, current advisories, trusted remote verification, and proof its compiler is Go 1.26.5 | Block download and use; the manifest also fails closed on any other compiler version. |
+| `org.flatpak.Builder` and `flatpak-builder-lint` | Unselected | Exact image/ref and digest, publisher provenance, transitive contents, licenses, current advisories, and isolation expectations | Block download and use. |
+
+Complete the review checklist in `docs/FLATPAK.md` before changing any of these
+decisions. The dependency-free static manifest verifier is not a replacement for
+the official builder, linter, runtime, or physical sandbox tests.

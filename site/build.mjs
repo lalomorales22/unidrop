@@ -6,11 +6,30 @@ const root = dirname(fileURLToPath(import.meta.url));
 const dist = join(root, "dist");
 const canonicalVersion = join(root, "..", "internal", "version", "VERSION");
 const localVersion = join(root, "version.txt");
+const snapshotPath = join(root, "source-snapshot.json");
 const versionPath = await access(canonicalVersion).then(() => canonicalVersion).catch(() => localVersion);
 const version = (await readFile(versionPath, "utf8")).trim();
 const mirroredVersion = (await readFile(localVersion, "utf8")).trim();
 if (mirroredVersion !== version) throw new Error("site/version.txt must mirror internal/version/VERSION");
-const html = (await readFile(join(root, "index.html"), "utf8")).replaceAll("{{VERSION}}", version);
+const snapshot = JSON.parse(await readFile(snapshotPath, "utf8"));
+if (!/^[a-f0-9]{40}$/.test(snapshot.commit)) throw new Error("source snapshot commit must be a full lowercase Git hash");
+if (snapshot.shortCommit !== snapshot.commit.slice(0, 7)) throw new Error("source snapshot short commit is inconsistent");
+if (!Number.isSafeInteger(snapshot.size) || snapshot.size <= 0) throw new Error("source snapshot size must be a positive integer");
+if (!/^[a-f0-9]{64}$/.test(snapshot.sha256)) throw new Error("source snapshot SHA-256 is malformed");
+if (snapshot.url !== `https://github.com/lalomorales22/unidrop/archive/${snapshot.commit}.zip`) throw new Error("source snapshot URL is not bound to its commit");
+if (!/^\d+(\.\d+)? (KiB|MiB)$/.test(snapshot.displaySize)) throw new Error("source snapshot display size is malformed");
+const replacements = {
+  "{{VERSION}}": version,
+  "{{SOURCE_SNAPSHOT_URL}}": snapshot.url,
+  "{{SOURCE_SNAPSHOT_COMMIT}}": snapshot.commit,
+  "{{SOURCE_SNAPSHOT_SHORT_COMMIT}}": snapshot.shortCommit,
+  "{{SOURCE_SNAPSHOT_SIZE}}": String(snapshot.size),
+  "{{SOURCE_SNAPSHOT_DISPLAY_SIZE}}": snapshot.displaySize,
+  "{{SOURCE_SNAPSHOT_SHA256}}": snapshot.sha256,
+};
+let html = await readFile(join(root, "index.html"), "utf8");
+for (const [placeholder, value] of Object.entries(replacements)) html = html.replaceAll(placeholder, value);
+if (/\{\{[A-Z0-9_]+\}\}/.test(html.replaceAll("{{ORIGIN}}", ""))) throw new Error("site contains an unresolved build placeholder");
 
 await rm(dist, { recursive: true, force: true });
 await mkdir(join(dist, "server"), { recursive: true });

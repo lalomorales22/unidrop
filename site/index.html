@@ -340,6 +340,7 @@
     .release-links a { padding: 9px 12px; border: 1px solid var(--line); border-radius: 11px; color: #c9cad3; text-decoration: none; font-size: 12px; font-weight: 700; }
     .release-links a:hover { border-color: var(--line-bright); background: rgba(255,255,255,.03); }
     .alpha-callout { margin-top: 22px; padding: 16px; border: 1px solid rgba(255,190,91,.2); border-radius: 14px; background: rgba(255,175,59,.055); color: #d5c3a8; font-size: 12px; line-height: 1.6; }
+    .checksum { overflow-wrap: anywhere; color: #b9bdd0; font: 11px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; }
 
     .oss { display: grid; grid-template-columns: 1.05fr .95fr; align-items: center; gap: 60px; }
     .oss-card { padding: 26px; border: 1px solid var(--line); border-radius: 26px; background: var(--panel); box-shadow: var(--shadow); }
@@ -442,26 +443,26 @@
         <div class="hero-proof" aria-label="Product qualities"><span>No account</span><span>No cloud</span><span>No tracking</span><span>TLS 1.3</span></div>
 
         <div class="downloads" aria-label="Get the UniDrop alpha source bundle">
-          <a class="download-card" data-download data-platform="mac" href="https://github.com/lalomorales22/unidrop/archive/refs/heads/main.zip" aria-label="Get the UniDrop alpha source installer for macOS">
+          <a class="download-card" data-download data-platform="mac" href="{{SOURCE_SNAPSHOT_URL}}" aria-label="Get the immutable UniDrop alpha source snapshot for macOS">
             <span class="recommend-badge">Recommended</span>
             <span class="platform-icon mac">⌘</span>
             <span class="download-copy"><small>macOS 13+ · source alpha</small><strong>Install on Mac</strong></span>
             <span class="download-arrow">↓</span>
           </a>
-          <a class="download-card" data-download data-platform="windows" href="https://github.com/lalomorales22/unidrop/archive/refs/heads/main.zip" aria-label="Get the UniDrop alpha source installer for Windows">
+          <a class="download-card" data-download data-platform="windows" href="{{SOURCE_SNAPSHOT_URL}}" aria-label="Get the immutable UniDrop alpha source snapshot for Windows">
             <span class="recommend-badge">Recommended</span>
             <span class="platform-icon windows" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
             <span class="download-copy"><small>Windows 10 / 11 · source alpha</small><strong>Install on Windows</strong></span>
             <span class="download-arrow">↓</span>
           </a>
-          <a class="download-card" data-download data-platform="linux" href="https://github.com/lalomorales22/unidrop/archive/refs/heads/main.zip" aria-label="Get the UniDrop alpha source installer for Linux">
+          <a class="download-card" data-download data-platform="linux" href="{{SOURCE_SNAPSHOT_URL}}" aria-label="Get the immutable UniDrop alpha source snapshot for Linux">
             <span class="recommend-badge">Recommended</span>
             <span class="platform-icon linux">&gt;_</span>
             <span class="download-copy"><small>Linux desktop · source alpha</small><strong>Install on Linux</strong></span>
             <span class="download-arrow">↓</span>
           </a>
         </div>
-        <p class="download-note">v{{VERSION}} source installer · AMD64 and ARM64 · per-user install</p>
+        <p class="download-note">v{{VERSION}} immutable source snapshot · {{SOURCE_SNAPSHOT_DISPLAY_SIZE}} · commit {{SOURCE_SNAPSHOT_SHORT_COMMIT}} · AMD64 and ARM64</p>
         <p class="detected-system" data-detected-system role="status" aria-live="polite">All platform choices remain available.</p>
 
         <div class="product-stage" aria-label="A file transferring securely between a Mac, Windows PC, and Linux computer">
@@ -554,9 +555,12 @@
               <li><strong>Network</strong><span>Two computers on the same private Wi-Fi or Ethernet network; no account or cloud service</span></li>
               <li><strong>Transfer limit</strong><span>20 GiB per regular file in this alpha; folders and resumable transfers are not yet available</span></li>
               <li><strong>Privileges</strong><span>Per-user installation; root or administrator access is not required</span></li>
+              <li><strong>Snapshot</strong><span>Immutable commit <a href="https://github.com/lalomorales22/unidrop/commit/{{SOURCE_SNAPSHOT_COMMIT}}"><code>{{SOURCE_SNAPSHOT_SHORT_COMMIT}}</code></a></span></li>
+              <li><strong>File size</strong><span>{{SOURCE_SNAPSHOT_SIZE}} bytes ({{SOURCE_SNAPSHOT_DISPLAY_SIZE}})</span></li>
+              <li><strong>SHA-256</strong><span class="checksum">{{SOURCE_SNAPSHOT_SHA256}}</span></li>
             </ul>
             <div class="release-links" aria-label="Release resources">
-              <a href="#release">Release notes</a>
+              <a href="https://github.com/lalomorales22/unidrop/blob/main/docs/RELEASE_NOTES.md">Release notes</a>
               <a href="https://github.com/lalomorales22/unidrop/blob/main/README.md">Installation guide</a>
               <a href="#privacy">Client privacy notice</a>
               <a href="https://github.com/lalomorales22/unidrop">Source code</a>
@@ -564,8 +568,8 @@
           </article>
           <aside class="release-card">
             <h3>Verification status</h3>
-            <p>Each future tagged package will publish its byte size, SHA-256 checksum, signed manifest, SBOM, and build provenance beside the download.</p>
-            <div class="alpha-callout"><strong>Current alpha limitation:</strong> the source archive is delivered by GitHub and does not yet carry the planned UniDrop publisher signature. Do not treat it as a signed production release.</div>
+            <p>The current immutable source snapshot publishes its exact byte size and SHA-256 above. Future tagged packages will additionally publish a signed manifest, SBOM, and build provenance beside every download.</p>
+            <div class="alpha-callout"><strong>Current alpha limitation:</strong> the source snapshot is delivered by GitHub and does not yet carry the planned UniDrop publisher signature. Its checksum detects changed bytes but does not prove publisher identity. Do not treat it as a signed production release.</div>
             <ul class="fact-list">
               <li><strong>Telemetry</strong><span>None in the local client</span></li>
               <li><strong>Account</strong><span>Not required</span></li>

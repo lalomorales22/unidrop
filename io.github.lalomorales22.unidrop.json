@@ -1,0 +1,65 @@
+{
+    "x-comment": "Local-development manifest only. This is not a Flathub submission manifest; see docs/FLATPAK.md.",
+    "id": "io.github.lalomorales22.unidrop",
+    "runtime": "org.freedesktop.Platform",
+    "runtime-version": "25.08",
+    "sdk": "org.freedesktop.Sdk",
+    "sdk-extensions": [
+        "org.freedesktop.Sdk.Extension.golang"
+    ],
+    "command": "unidrop-flatpak",
+    "finish-args": [
+        "--share=network",
+        "--filesystem=xdg-download/UniDrop:create",
+        "--talk-name=org.kde.StatusNotifierWatcher",
+        "--talk-name=org.freedesktop.StatusNotifierWatcher",
+        "--own-name=org.kde.StatusNotifierItem-*",
+        "--own-name=org.freedesktop.StatusNotifierItem-*"
+    ],
+    "build-options": {
+        "append-path": "/usr/lib/sdk/golang/bin",
+        "env": {
+            "CGO_ENABLED": "0",
+            "GOFLAGS": "-buildvcs=false",
+            "GOPROXY": "off",
+            "GOSUMDB": "off"
+        }
+    },
+    "modules": [
+        {
+            "name": "unidrop",
+            "buildsystem": "simple",
+            "build-commands": [
+                "test \"$(go env GOVERSION)\" = \"go1.26.5\"",
+                "go test -mod=vendor ./...",
+                "version=$(tr -d '\\r\\n' < internal/version/VERSION); go build -mod=vendor -trimpath -ldflags=\"-s -w -X main.appVersion=$version\" -o unidrop .",
+                "version=$(tr -d '\\r\\n' < internal/version/VERSION); go build -mod=vendor -trimpath -ldflags=\"-s -w -X main.appVersion=$version\" -o unidrop-tray ./cmd/unidrop-tray",
+                "go build -mod=vendor -trimpath -ldflags=\"-s -w\" -o unidrop-update ./cmd/unidrop-update",
+                "install -Dm755 unidrop /app/bin/unidrop",
+                "install -Dm755 unidrop-tray /app/bin/unidrop-tray",
+                "install -Dm755 unidrop-update /app/bin/unidrop-update",
+                "install -Dm755 linux/flatpak-wrapper.sh /app/bin/unidrop-flatpak",
+                "install -Dm644 linux/io.github.lalomorales22.unidrop.desktop /app/share/applications/io.github.lalomorales22.unidrop.desktop",
+                "install -Dm644 linux/unidrop.svg /app/share/icons/hicolor/scalable/apps/io.github.lalomorales22.unidrop.svg",
+                "install -Dm644 linux/unidrop.svg /app/share/icons/hicolor/scalable/apps/unidrop.svg",
+                "version=$(tr -d '\\r\\n' < internal/version/VERSION); sed -e \"s/__VERSION__/$version/g\" -e \"s/__RELEASE_DATE__/2026-07-30/g\" linux/io.github.lalomorales22.unidrop.metainfo.xml > io.github.lalomorales22.unidrop.metainfo.xml",
+                "install -Dm644 io.github.lalomorales22.unidrop.metainfo.xml /app/share/metainfo/io.github.lalomorales22.unidrop.metainfo.xml",
+                "desktop-file-validate /app/share/applications/io.github.lalomorales22.unidrop.desktop",
+                "appstreamcli validate --no-net /app/share/metainfo/io.github.lalomorales22.unidrop.metainfo.xml"
+            ],
+            "sources": [
+                {
+                    "type": "dir",
+                    "path": ".",
+                    "skip": [
+                        ".git",
+                        ".flatpak-builder",
+                        "build-flatpak",
+                        "dist",
+                        "site/dist"
+                    ]
+                }
+            ]
+        }
+    ]
+}

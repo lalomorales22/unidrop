@@ -162,6 +162,11 @@ download, install, verify, update, and remove.
 
 - [x] Produce an AppImage with desktop file, icon, and AppStream metadata.
 - [ ] Create and lint a Flatpak manifest, then prepare a Flathub submission.
+  A dependency-free, least-permission development manifest and static validator
+  now exist. The item remains open pending reviewed Flatpak tooling, an official
+  builder/linter run, physical desktop tests, the license and brand decisions,
+  a stable source release, and resolution of Flathub's current AI-content policy;
+  see `docs/FLATPAK.md`.
 - [ ] Evaluate `.deb` and `.rpm` only after AppImage/Flatpak are reliable.
 - [ ] Test GNOME, KDE Plasma, and at least one tray-host-limited desktop.
 - [ ] Verify XDG paths, Wayland behavior, user services, autostart fallback, and
@@ -174,10 +179,16 @@ download, install, verify, update, and remove.
   downgrades, expired metadata, and rollback attempts.
 - [ ] Download updates to a temporary location, verify them before execution, and
   preserve the last working version for recovery.
+  Signed staging and a hash-bound, health-checked, crash-safe replacement engine
+  are implemented and tested. This remains open until each native package is
+  independently verified and its installer invokes the replacement/recovery path.
 - [ ] Never require administrator/root privileges unless the chosen package format
   explicitly requires them and the UI explains why.
 - [ ] Provide automatic, notify-only, and disabled update preferences.
-- [ ] Test interrupted downloads, corrupt packages, revoked releases, offline
+  The dependency-free helper persists all three values privately and defaults to
+  notify-only. This remains open until the desktop UI and native installers honor
+  the selection without bypassing native package verification.
+- [x] Test interrupted downloads, corrupt packages, revoked releases, offline
   startup, and rollback.
 
 ## 1.6 Landing page and beta distribution
@@ -186,7 +197,7 @@ download, install, verify, update, and remove.
 - [ ] Point Mac, Windows, and Linux buttons at real release assets rather than the
   source archive.
 - [x] Detect operating system and architecture without preventing manual choices.
-- [ ] Add version, file size, checksum, installation instructions, system
+- [x] Add version, file size, checksum, installation instructions, system
   requirements, release notes, privacy policy, and source links.
 - [ ] Add a short product demo and authentic screenshots from all three platforms.
 - [ ] Add a privacy-respecting beta/waitlist form with explicit consent and a

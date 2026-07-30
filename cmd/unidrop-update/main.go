@@ -1,5 +1,6 @@
-// UniDrop update verifies and stages signed release artifacts without modifying
-// the working installation. It intentionally uses only the Go standard library.
+// UniDrop update verifies and stages signed release artifacts and provides the
+// fail-closed preference and replacement primitives used by native installers.
+// It intentionally uses only the Go standard library.
 package main
 
 import (
@@ -30,11 +31,25 @@ import (
 )
 
 const (
-	maxManifestBytes  = int64(4 << 20)
-	maxSignatureBytes = int64(128 << 10)
-	maxUpdateBytes    = int64(2 << 30)
-	metadataClockSkew = 5 * time.Minute
-	maximumValidity   = 45 * 24 * time.Hour
+	maxManifestBytes   = int64(4 << 20)
+	maxSignatureBytes  = int64(128 << 10)
+	maxUpdateBytes     = int64(2 << 30)
+	maxLocalStateBytes = int64(64 << 10)
+	metadataClockSkew  = 5 * time.Minute
+	maximumValidity    = 45 * 24 * time.Hour
+)
+
+const (
+	preferenceNotifyOnly = "notify-only"
+	preferenceAutomatic  = "automatic"
+	preferenceDisabled   = "disabled"
+)
+
+const (
+	replacementPrepared    = "prepared"
+	replacementTargetMoved = "target-moved"
+	replacementReplaced    = "replaced"
+	replacementHealthy     = "healthy"
 )
 
 type signatureEnvelope struct {
@@ -87,6 +102,26 @@ type updateState struct {
 	AcceptedAt             string `json:"acceptedAt"`
 }
 
+type updatePreferenceFile struct {
+	SchemaVersion int    `json:"schemaVersion"`
+	Mode          string `json:"mode"`
+	UpdatedAt     string `json:"updatedAt"`
+}
+
+type replacementJournal struct {
+	SchemaVersion     int    `json:"schemaVersion"`
+	Phase             string `json:"phase"`
+	TargetPath        string `json:"targetPath"`
+	CandidatePath     string `json:"candidatePath"`
+	PendingBackupPath string `json:"pendingBackupPath"`
+	BackupPath        string `json:"backupPath"`
+	PreviousSize      int64  `json:"previousSize"`
+	PreviousSHA256    string `json:"previousSha256"`
+	CandidateSize     int64  `json:"candidateSize"`
+	CandidateSHA256   string `json:"candidateSha256"`
+	UpdatedAt         string `json:"updatedAt"`
+}
+
 type stageResult struct {
 	Version  string
 	Artifact releaseArtifact
@@ -101,9 +136,22 @@ func main() {
 }
 
 func run(args []string) error {
-	if len(args) == 0 || args[0] != "stage" {
-		return errors.New("expected: stage --manifest-url URL --public-key FILE")
+	if len(args) == 0 {
+		return errors.New("expected: stage, preference, or recover")
 	}
+	switch args[0] {
+	case "stage":
+		return runStage(args[1:])
+	case "preference":
+		return runPreference(args[1:])
+	case "recover":
+		return runRecover(args[1:])
+	default:
+		return errors.New("expected: stage, preference, or recover")
+	}
+}
+
+func runStage(args []string) error {
 	flags := flag.NewFlagSet("stage", flag.ContinueOnError)
 	manifestURL := flags.String("manifest-url", "", "HTTPS release manifest URL")
 	signatureURL := flags.String("signature-url", "", "HTTPS signature-envelope URL")
@@ -111,7 +159,7 @@ func run(args []string) error {
 	component := flags.String("component", "core", "release component to stage")
 	stagingDir := flags.String("staging-dir", "", "private update staging directory")
 	statePath := flags.String("state", "", "highest-accepted-version state file")
-	if err := flags.Parse(args[1:]); err != nil {
+	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if *manifestURL == "" || *publicPath == "" {
@@ -174,6 +222,64 @@ func run(args []string) error {
 	}
 	fmt.Printf("UniDrop %s verified and staged at %s\n", result.Version, result.Path)
 	return nil
+}
+
+func runPreference(args []string) error {
+	if len(args) == 0 || (args[0] != "get" && args[0] != "set") {
+		return errors.New("expected: preference get [--file FILE] or preference set MODE [--file FILE]")
+	}
+	command := args[0]
+	mode := ""
+	remaining := args[1:]
+	if command == "set" {
+		if len(remaining) == 0 {
+			return errors.New("preference set requires automatic, notify-only, or disabled")
+		}
+		mode = remaining[0]
+		remaining = remaining[1:]
+	}
+	flags := flag.NewFlagSet("preference "+command, flag.ContinueOnError)
+	preferencePath := flags.String("file", "", "private update-preference file")
+	if err := flags.Parse(remaining); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return errors.New("unexpected preference arguments")
+	}
+	if *preferencePath == "" {
+		resolved, err := defaultPreferencePath()
+		if err != nil {
+			return err
+		}
+		*preferencePath = resolved
+	}
+	if command == "set" {
+		if err := writeUpdatePreference(*preferencePath, mode, time.Now().UTC()); err != nil {
+			return err
+		}
+	}
+	selected, err := readUpdatePreference(*preferencePath)
+	if err != nil {
+		return err
+	}
+	fmt.Println(selected)
+	return nil
+}
+
+func runRecover(args []string) error {
+	flags := flag.NewFlagSet("recover", flag.ContinueOnError)
+	journalPath := flags.String("journal", "", "private replacement journal")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if *journalPath == "" || flags.NArg() != 0 {
+		return errors.New("recover requires --journal FILE")
+	}
+	absoluteJournal, err := filepath.Abs(*journalPath)
+	if err != nil {
+		return err
+	}
+	return recoverReplacement(absoluteJournal)
 }
 
 func stageUpdate(ctx context.Context, baseClient *http.Client, manifestURL, signatureURL string,
@@ -614,19 +720,12 @@ func ensurePrivateDirectory(directory string) error {
 }
 
 func readHighestAccepted(statePath string) (string, error) {
-	encoded, err := os.ReadFile(statePath)
-	if errors.Is(err, os.ErrNotExist) {
+	encoded, exists, err := readPrivateFileBytes(statePath)
+	if !exists && err == nil {
 		return "", nil
 	}
 	if err != nil {
 		return "", fmt.Errorf("read update state: %w", err)
-	}
-	info, err := os.Lstat(statePath)
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-		return "", errors.New("update state must be a regular file")
-	}
-	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
-		return "", errors.New("update state permissions are not private")
 	}
 	var state updateState
 	if err := decodeStrictJSON(encoded, &state); err != nil {
@@ -715,6 +814,682 @@ func writeStateDirect(statePath string, encoded []byte) error {
 		return err
 	}
 	return nil
+}
+
+func defaultPreferencePath() (string, error) {
+	config, err := os.UserConfigDir()
+	if err != nil {
+		return "", errors.New("resolve per-user update preference directory")
+	}
+	return filepath.Join(config, "UniDrop", "update-preference.json"), nil
+}
+
+func validUpdatePreference(mode string) bool {
+	return mode == preferenceNotifyOnly || mode == preferenceAutomatic || mode == preferenceDisabled
+}
+
+func readUpdatePreference(preferencePath string) (string, error) {
+	var preference updatePreferenceFile
+	exists, err := readPrivateJSONFile(preferencePath, &preference)
+	if err != nil {
+		return "", fmt.Errorf("read update preference: %w", err)
+	}
+	if !exists {
+		return preferenceNotifyOnly, nil
+	}
+	if preference.SchemaVersion != 1 || !validUpdatePreference(preference.Mode) {
+		return "", errors.New("update preference is invalid")
+	}
+	if _, err := time.Parse(time.RFC3339, preference.UpdatedAt); err != nil {
+		return "", errors.New("update preference timestamp is invalid")
+	}
+	return preference.Mode, nil
+}
+
+func writeUpdatePreference(preferencePath, mode string, updatedAt time.Time) error {
+	if !validUpdatePreference(mode) {
+		return errors.New("update preference must be automatic, notify-only, or disabled")
+	}
+	if updatedAt.IsZero() {
+		return errors.New("update preference timestamp is required")
+	}
+	return writeAtomicPrivateJSON(preferencePath, updatePreferenceFile{
+		SchemaVersion: 1,
+		Mode:          mode,
+		UpdatedAt:     updatedAt.UTC().Format(time.RFC3339),
+	})
+}
+
+func readPrivateJSONFile(filePath string, target any) (bool, error) {
+	if err := recoverAtomicPrivateFile(filePath); err != nil {
+		return false, err
+	}
+	encoded, exists, err := readPrivateFileBytes(filePath)
+	if err != nil || !exists {
+		return exists, err
+	}
+	if err := decodeStrictJSON(encoded, target); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func readPrivateFileBytes(filePath string) ([]byte, bool, error) {
+	before, err := privateRegularFile(filePath)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if before.Size() > maxLocalStateBytes {
+		return nil, false, errors.New("private state exceeds size limit")
+	}
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, false, err
+	}
+	opened, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, false, err
+	}
+	if !opened.Mode().IsRegular() || !os.SameFile(before, opened) {
+		_ = file.Close()
+		return nil, false, errors.New("private state changed while it was opened")
+	}
+	encoded, readErr := io.ReadAll(io.LimitReader(file, maxLocalStateBytes+1))
+	closeErr := file.Close()
+	if readErr != nil {
+		return nil, false, readErr
+	}
+	if closeErr != nil {
+		return nil, false, closeErr
+	}
+	if int64(len(encoded)) > maxLocalStateBytes {
+		return nil, false, errors.New("private state exceeds size limit")
+	}
+	after, err := privateRegularFile(filePath)
+	if err != nil || !os.SameFile(before, after) || after.Size() != int64(len(encoded)) {
+		return nil, false, errors.New("private state changed while it was read")
+	}
+	return encoded, true, nil
+}
+
+func writeAtomicPrivateJSON(filePath string, value any) error {
+	encoded, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return err
+	}
+	encoded = append(encoded, '\n')
+	if int64(len(encoded)) > maxLocalStateBytes {
+		return errors.New("private state exceeds size limit")
+	}
+	directory := filepath.Dir(filePath)
+	if err := ensurePrivateDirectory(directory); err != nil {
+		return err
+	}
+	if err := recoverAtomicPrivateFile(filePath); err != nil {
+		return err
+	}
+	_, existingErr := privateRegularFile(filePath)
+	if existingErr != nil && !errors.Is(existingErr, os.ErrNotExist) {
+		return existingErr
+	}
+	file, err := os.CreateTemp(directory, ".private-state-*")
+	if err != nil {
+		return err
+	}
+	temporary := file.Name()
+	keepTemporary := true
+	defer func() {
+		_ = file.Close()
+		if keepTemporary {
+			_ = os.Remove(temporary)
+		}
+	}()
+	if err := file.Chmod(0o600); err != nil {
+		return err
+	}
+	if _, err := file.Write(encoded); err != nil {
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	previous := filePath + ".previous"
+	if existingErr == nil {
+		if err := os.Rename(filePath, previous); err != nil {
+			return fmt.Errorf("preserve previous private state: %w", err)
+		}
+		if err := syncDirectory(directory); err != nil {
+			_ = os.Rename(previous, filePath)
+			return err
+		}
+	}
+	if err := os.Rename(temporary, filePath); err != nil {
+		if existingErr == nil {
+			_ = os.Rename(previous, filePath)
+		}
+		return fmt.Errorf("replace private state: %w", err)
+	}
+	keepTemporary = false
+	if err := syncDirectory(directory); err != nil {
+		return err
+	}
+	if existingErr == nil {
+		if err := removePrivateRegularFile(previous); err != nil {
+			return err
+		}
+		if err := syncDirectory(directory); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func recoverAtomicPrivateFile(filePath string) error {
+	previous := filePath + ".previous"
+	_, currentErr := privateRegularFile(filePath)
+	_, previousErr := privateRegularFile(previous)
+	currentExists := currentErr == nil
+	previousExists := previousErr == nil
+	if currentErr != nil && !errors.Is(currentErr, os.ErrNotExist) {
+		return currentErr
+	}
+	if previousErr != nil && !errors.Is(previousErr, os.ErrNotExist) {
+		return previousErr
+	}
+	if !currentExists && previousExists {
+		if err := os.Rename(previous, filePath); err != nil {
+			return fmt.Errorf("recover previous private state: %w", err)
+		}
+		return syncDirectory(filepath.Dir(filePath))
+	}
+	if currentExists && previousExists {
+		if err := removePrivateRegularFile(previous); err != nil {
+			return err
+		}
+		return syncDirectory(filepath.Dir(filePath))
+	}
+	return nil
+}
+
+func privateRegularFile(filePath string) (os.FileInfo, error) {
+	info, err := os.Lstat(filePath)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, errors.New("private state must be a regular file")
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
+		return nil, errors.New("private state permissions are not private")
+	}
+	return info, nil
+}
+
+func regularFile(filePath string) (os.FileInfo, error) {
+	info, err := os.Lstat(filePath)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, errors.New("replacement path must be a regular file")
+	}
+	return info, nil
+}
+
+func removePrivateRegularFile(filePath string) error {
+	if _, err := privateRegularFile(filePath); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	return os.Remove(filePath)
+}
+
+func removeRegularFile(filePath string) error {
+	if _, err := regularFile(filePath); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	return os.Remove(filePath)
+}
+
+func clearPrivateState(filePath string) error {
+	if err := removePrivateRegularFile(filePath + ".previous"); err != nil {
+		return err
+	}
+	if err := removePrivateRegularFile(filePath); err != nil {
+		return err
+	}
+	return syncDirectory(filepath.Dir(filePath))
+}
+
+func syncDirectory(directoryPath string) error {
+	directory, err := os.Open(directoryPath)
+	if err != nil {
+		return err
+	}
+	err = directory.Sync()
+	closeErr := directory.Close()
+	if runtime.GOOS == "windows" {
+		return closeErr
+	}
+	if err != nil {
+		return err
+	}
+	return closeErr
+}
+
+func replaceVerifiedArtifact(stagedPath, targetPath, journalPath string, expectedSize int64, expectedSHA256 string, healthCheck func(string) error) (string, error) {
+	if healthCheck == nil {
+		return "", errors.New("replacement health check is required")
+	}
+	if expectedSize <= 0 || !isLowerHex(expectedSHA256, sha256.Size*2) {
+		return "", errors.New("replacement requires a signed size and SHA-256")
+	}
+	absoluteStaged, err := filepath.Abs(stagedPath)
+	if err != nil {
+		return "", err
+	}
+	absoluteTarget, err := filepath.Abs(targetPath)
+	if err != nil {
+		return "", err
+	}
+	absoluteJournal, err := filepath.Abs(journalPath)
+	if err != nil {
+		return "", err
+	}
+	if !distinctPaths(absoluteStaged, absoluteTarget, absoluteJournal, absoluteJournal+".previous") {
+		return "", errors.New("staged, installed, and journal paths must differ")
+	}
+	if err := existingPathsAreDistinct(absoluteStaged, absoluteTarget, absoluteJournal, absoluteJournal+".previous"); err != nil {
+		return "", err
+	}
+	if err := recoverReplacement(absoluteJournal); err != nil {
+		return "", fmt.Errorf("recover prior replacement: %w", err)
+	}
+	targetInfo, err := regularFile(absoluteTarget)
+	if err != nil {
+		return "", fmt.Errorf("inspect working installation: %w", err)
+	}
+	previousSize, previousDigest, err := fileSizeAndSHA256(absoluteTarget)
+	if err != nil {
+		return "", err
+	}
+	stagedSize, stagedDigest, err := fileSizeAndSHA256(absoluteStaged)
+	if err != nil {
+		return "", fmt.Errorf("inspect staged update: %w", err)
+	}
+	if stagedSize != expectedSize || stagedDigest != expectedSHA256 {
+		return "", errors.New("staged update no longer matches signed metadata")
+	}
+	targetDirectory := filepath.Dir(absoluteTarget)
+	pendingBackup := absoluteTarget + ".previous.pending"
+	backupPath := absoluteTarget + ".last-working"
+	if !distinctPaths(absoluteStaged, absoluteTarget, pendingBackup, backupPath, absoluteJournal, absoluteJournal+".previous") {
+		return "", errors.New("replacement paths collide with reserved state")
+	}
+	for _, reserved := range []string{pendingBackup, backupPath} {
+		if _, err := regularFile(reserved); err == nil {
+			if reserved == pendingBackup {
+				return "", errors.New("pending replacement backup exists without a journal")
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+	}
+	candidateFile, err := os.CreateTemp(targetDirectory, ".unidrop-candidate-*")
+	if err != nil {
+		return "", fmt.Errorf("create replacement candidate: %w", err)
+	}
+	candidatePath := candidateFile.Name()
+	if !distinctPaths(candidatePath, absoluteStaged, absoluteTarget, pendingBackup, backupPath, absoluteJournal, absoluteJournal+".previous") {
+		_ = candidateFile.Close()
+		_ = os.Remove(candidatePath)
+		return "", errors.New("replacement candidate collides with reserved state")
+	}
+	keepCandidate := true
+	defer func() {
+		_ = candidateFile.Close()
+		if keepCandidate {
+			_ = os.Remove(candidatePath)
+		}
+	}()
+	stagedFile, err := os.Open(absoluteStaged)
+	if err != nil {
+		return "", err
+	}
+	hasher := sha256.New()
+	written, copyErr := copyAndHash(candidateFile, stagedFile, hasher, expectedSize)
+	closeStagedErr := stagedFile.Close()
+	if copyErr != nil {
+		return "", copyErr
+	}
+	if closeStagedErr != nil {
+		return "", closeStagedErr
+	}
+	if written != expectedSize || hex.EncodeToString(hasher.Sum(nil)) != expectedSHA256 {
+		return "", errors.New("replacement candidate does not match signed metadata")
+	}
+	if err := candidateFile.Chmod(targetInfo.Mode().Perm()); err != nil {
+		return "", err
+	}
+	if err := candidateFile.Sync(); err != nil {
+		return "", err
+	}
+	if err := candidateFile.Close(); err != nil {
+		return "", err
+	}
+	journal := replacementJournal{
+		SchemaVersion: 1, Phase: replacementPrepared,
+		TargetPath: absoluteTarget, CandidatePath: candidatePath,
+		PendingBackupPath: pendingBackup, BackupPath: backupPath,
+		PreviousSize: previousSize, PreviousSHA256: previousDigest,
+		CandidateSize: expectedSize, CandidateSHA256: expectedSHA256,
+	}
+	if err := writeReplacementJournal(absoluteJournal, &journal); err != nil {
+		return "", err
+	}
+	keepCandidate = false
+	if err := os.Rename(absoluteTarget, pendingBackup); err != nil {
+		_ = recoverReplacement(absoluteJournal)
+		return "", fmt.Errorf("preserve working installation: %w", err)
+	}
+	if err := syncDirectory(targetDirectory); err != nil {
+		_ = recoverReplacement(absoluteJournal)
+		return "", err
+	}
+	journal.Phase = replacementTargetMoved
+	if err := writeReplacementJournal(absoluteJournal, &journal); err != nil {
+		_ = recoverReplacement(absoluteJournal)
+		return "", err
+	}
+	if err := os.Rename(candidatePath, absoluteTarget); err != nil {
+		_ = recoverReplacement(absoluteJournal)
+		return "", fmt.Errorf("activate replacement candidate: %w", err)
+	}
+	if err := syncDirectory(targetDirectory); err != nil {
+		_ = recoverReplacement(absoluteJournal)
+		return "", err
+	}
+	journal.Phase = replacementReplaced
+	if err := writeReplacementJournal(absoluteJournal, &journal); err != nil {
+		_ = recoverReplacement(absoluteJournal)
+		return "", err
+	}
+	if err := healthCheck(absoluteTarget); err != nil {
+		if recoveryErr := recoverReplacement(absoluteJournal); recoveryErr != nil {
+			return "", fmt.Errorf("replacement health check failed: %v; rollback failed: %w", err, recoveryErr)
+		}
+		return "", fmt.Errorf("replacement health check failed and was rolled back: %w", err)
+	}
+	journal.Phase = replacementHealthy
+	if err := writeReplacementJournal(absoluteJournal, &journal); err != nil {
+		_ = recoverReplacement(absoluteJournal)
+		return "", err
+	}
+	if err := finalizeHealthyReplacement(&journal, absoluteJournal); err != nil {
+		return "", err
+	}
+	return backupPath, nil
+}
+
+func writeReplacementJournal(journalPath string, journal *replacementJournal) error {
+	journal.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	if err := validateReplacementJournal(journal, journalPath); err != nil {
+		return err
+	}
+	return writeAtomicPrivateJSON(journalPath, journal)
+}
+
+func recoverReplacement(journalPath string) error {
+	var journal replacementJournal
+	exists, err := readPrivateJSONFile(journalPath, &journal)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+	if err := validateReplacementJournal(&journal, journalPath); err != nil {
+		return err
+	}
+	if journal.Phase == replacementHealthy {
+		return finalizeHealthyReplacement(&journal, journalPath)
+	}
+	return rollbackReplacement(&journal, journalPath)
+}
+
+func validateReplacementJournal(journal *replacementJournal, journalPath string) error {
+	if journal.SchemaVersion != 1 {
+		return errors.New("replacement journal schema is unsupported")
+	}
+	if journal.Phase != replacementPrepared && journal.Phase != replacementTargetMoved && journal.Phase != replacementReplaced && journal.Phase != replacementHealthy {
+		return errors.New("replacement journal phase is invalid")
+	}
+	if _, err := time.Parse(time.RFC3339Nano, journal.UpdatedAt); err != nil {
+		return errors.New("replacement journal timestamp is invalid")
+	}
+	paths := []string{journal.TargetPath, journal.CandidatePath, journal.PendingBackupPath, journal.BackupPath}
+	seen := make(map[string]struct{}, len(paths))
+	for _, filePath := range paths {
+		if !filepath.IsAbs(filePath) || filepath.Clean(filePath) != filePath {
+			return errors.New("replacement journal paths must be clean and absolute")
+		}
+		if _, exists := seen[filePath]; exists {
+			return errors.New("replacement journal paths must be distinct")
+		}
+		seen[filePath] = struct{}{}
+	}
+	targetDirectory := filepath.Dir(journal.TargetPath)
+	if filepath.Dir(journal.CandidatePath) != targetDirectory || filepath.Dir(journal.PendingBackupPath) != targetDirectory || filepath.Dir(journal.BackupPath) != targetDirectory {
+		return errors.New("replacement files must share the installed file directory")
+	}
+	if journal.PendingBackupPath != journal.TargetPath+".previous.pending" || journal.BackupPath != journal.TargetPath+".last-working" || !strings.HasPrefix(filepath.Base(journal.CandidatePath), ".unidrop-candidate-") {
+		return errors.New("replacement journal contains unexpected internal paths")
+	}
+	absoluteJournal, err := filepath.Abs(journalPath)
+	if err != nil {
+		return err
+	}
+	if filepath.Clean(journalPath) != journalPath || absoluteJournal != journalPath || !distinctPaths(journal.TargetPath, journal.CandidatePath, journal.PendingBackupPath, journal.BackupPath, journalPath, journalPath+".previous") {
+		return errors.New("replacement journal path collides with managed files")
+	}
+	if err := existingPathsAreDistinct(journal.TargetPath, journal.CandidatePath, journal.PendingBackupPath, journal.BackupPath, journalPath, journalPath+".previous"); err != nil {
+		return err
+	}
+	if journal.PreviousSize <= 0 || journal.CandidateSize <= 0 || !isLowerHex(journal.PreviousSHA256, sha256.Size*2) || !isLowerHex(journal.CandidateSHA256, sha256.Size*2) {
+		return errors.New("replacement journal hashes or sizes are invalid")
+	}
+	return nil
+}
+
+func rollbackReplacement(journal *replacementJournal, journalPath string) error {
+	_, pendingErr := regularFile(journal.PendingBackupPath)
+	pendingExists := pendingErr == nil
+	if pendingErr != nil && !errors.Is(pendingErr, os.ErrNotExist) {
+		return pendingErr
+	}
+	if pendingExists {
+		matches, err := fileMatches(journal.PendingBackupPath, journal.PreviousSize, journal.PreviousSHA256)
+		if err != nil {
+			return err
+		}
+		if !matches {
+			return errors.New("pending backup does not match the last working installation")
+		}
+		if _, err := regularFile(journal.TargetPath); err == nil {
+			previousMatches, previousErr := fileMatches(journal.TargetPath, journal.PreviousSize, journal.PreviousSHA256)
+			candidateMatches, candidateErr := fileMatches(journal.TargetPath, journal.CandidateSize, journal.CandidateSHA256)
+			if previousErr != nil || candidateErr != nil || (!previousMatches && !candidateMatches) {
+				return errors.New("installed file does not match a journaled replacement generation")
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if err := removeRegularFile(journal.TargetPath); err != nil {
+			return err
+		}
+		if err := os.Rename(journal.PendingBackupPath, journal.TargetPath); err != nil {
+			return fmt.Errorf("restore last working installation: %w", err)
+		}
+		if err := syncDirectory(filepath.Dir(journal.TargetPath)); err != nil {
+			return err
+		}
+	}
+	matches, err := fileMatches(journal.TargetPath, journal.PreviousSize, journal.PreviousSHA256)
+	if err != nil {
+		return err
+	}
+	if !matches {
+		return errors.New("cannot prove the last working installation was restored")
+	}
+	if err := removeVerifiedCandidate(journal); err != nil {
+		return err
+	}
+	return clearPrivateState(journalPath)
+}
+
+func finalizeHealthyReplacement(journal *replacementJournal, journalPath string) error {
+	matches, err := fileMatches(journal.TargetPath, journal.CandidateSize, journal.CandidateSHA256)
+	if err != nil {
+		return err
+	}
+	if !matches {
+		return errors.New("healthy replacement no longer matches the verified candidate")
+	}
+	_, pendingErr := regularFile(journal.PendingBackupPath)
+	if pendingErr == nil {
+		matches, matchErr := fileMatches(journal.PendingBackupPath, journal.PreviousSize, journal.PreviousSHA256)
+		if matchErr != nil {
+			return matchErr
+		}
+		if !matches {
+			return errors.New("pending backup does not match the last working installation")
+		}
+		if err := removeRegularFile(journal.BackupPath); err != nil {
+			return err
+		}
+		if err := os.Rename(journal.PendingBackupPath, journal.BackupPath); err != nil {
+			return fmt.Errorf("promote last working backup: %w", err)
+		}
+		if err := syncDirectory(filepath.Dir(journal.TargetPath)); err != nil {
+			return err
+		}
+	} else if !errors.Is(pendingErr, os.ErrNotExist) {
+		return pendingErr
+	}
+	backupMatches, err := fileMatches(journal.BackupPath, journal.PreviousSize, journal.PreviousSHA256)
+	if err != nil {
+		return err
+	}
+	if !backupMatches {
+		return errors.New("last working backup does not match the replacement journal")
+	}
+	if err := removeVerifiedCandidate(journal); err != nil {
+		return err
+	}
+	return clearPrivateState(journalPath)
+}
+
+func removeVerifiedCandidate(journal *replacementJournal) error {
+	if _, err := regularFile(journal.CandidatePath); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	matches, err := fileMatches(journal.CandidatePath, journal.CandidateSize, journal.CandidateSHA256)
+	if err != nil {
+		return err
+	}
+	if !matches {
+		return errors.New("replacement candidate no longer matches the journal")
+	}
+	return removeRegularFile(journal.CandidatePath)
+}
+
+func distinctPaths(paths ...string) bool {
+	seen := make(map[string]struct{}, len(paths))
+	for _, filePath := range paths {
+		if _, exists := seen[filePath]; exists {
+			return false
+		}
+		seen[filePath] = struct{}{}
+	}
+	return true
+}
+
+func existingPathsAreDistinct(paths ...string) error {
+	type existingPath struct {
+		path string
+		info os.FileInfo
+	}
+	existing := make([]existingPath, 0, len(paths))
+	for _, filePath := range paths {
+		info, err := os.Lstat(filePath)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		for _, prior := range existing {
+			if os.SameFile(prior.info, info) {
+				return fmt.Errorf("replacement paths %q and %q identify the same file", prior.path, filePath)
+			}
+		}
+		existing = append(existing, existingPath{path: filePath, info: info})
+	}
+	return nil
+}
+
+func fileMatches(filePath string, expectedSize int64, expectedSHA256 string) (bool, error) {
+	size, digest, err := fileSizeAndSHA256(filePath)
+	if err != nil {
+		return false, err
+	}
+	return size == expectedSize && digest == expectedSHA256, nil
+}
+
+func fileSizeAndSHA256(filePath string) (int64, string, error) {
+	before, err := regularFile(filePath)
+	if err != nil {
+		return 0, "", err
+	}
+	file, err := os.Open(filePath)
+	if err != nil {
+		return 0, "", err
+	}
+	opened, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return 0, "", err
+	}
+	if !opened.Mode().IsRegular() || !os.SameFile(before, opened) {
+		_ = file.Close()
+		return 0, "", errors.New("file changed while it was opened")
+	}
+	hasher := sha256.New()
+	written, copyErr := io.Copy(hasher, file)
+	closeErr := file.Close()
+	if copyErr != nil {
+		return 0, "", copyErr
+	}
+	if closeErr != nil {
+		return 0, "", closeErr
+	}
+	after, err := regularFile(filePath)
+	if err != nil || !os.SameFile(before, after) || written != before.Size() || written != after.Size() {
+		return 0, "", errors.New("file changed while it was hashed")
+	}
+	return written, hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
 func readPublicKey(path string) (ed25519.PublicKey, error) {
