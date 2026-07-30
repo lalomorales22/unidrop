@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=UniDrop
+Comment=Secure local file sharing
+Exec=unidrop-flatpak
+Icon=io.github.lalomorales22.unidrop
+Terminal=false
+Categories=Network;FileTransfer;
+Keywords=share;send;transfer;local;LAN;
+StartupNotify=false

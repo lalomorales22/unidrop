@@ -79,6 +79,10 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+      - name: Validate development Flatpak manifest
+        run: |
+          node --test scripts/verify-flatpak.test.mjs
+          node scripts/verify-flatpak.mjs
       - name: Build and test dependency-free site
         working-directory: site
         run: npm test

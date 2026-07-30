@@ -1,10 +1,11 @@
 # Signed update metadata design
 
 Automatic update installation is not enabled in the alpha client. The
-dependency-free `cmd/unidrop-update` helper implements signed metadata acceptance
-and non-executable artifact staging; native signature verification, replacement,
-health checks, recovery, and user preferences must still be completed before an
-installer invokes it automatically.
+dependency-free `cmd/unidrop-update` helper implements signed metadata acceptance,
+non-executable artifact staging, private update preferences, and a crash-safe
+replacement/rollback engine. Native package signature or notarization checks and
+package-specific installer wiring must still be completed before any preference
+can activate unattended installation.
 
 ## Release manifest
 
@@ -49,10 +50,50 @@ Before showing or installing an update, the client must:
 8. Preserve the currently working installation until the replacement launches
    and passes a health check. On failure, restore it without altering user data.
 
-Update preferences will be `notify` by default, `automatic`, or `disabled`.
 Checking must not require administrator/root access. The chosen native package
 format may request elevation only at the final OS-controlled installation step,
 with the reason shown before consent.
+
+## Preferences and activation boundary
+
+The helper stores `notify-only` (the default), `automatic`, or `disabled` in a
+private per-user JSON file. Writes use a synchronized temporary file and a
+two-generation rename so an interrupted preference change restores the last
+complete value. Unknown fields, duplicate fields, invalid values, oversized
+state, symlinks, and group/other-readable POSIX files fail closed.
+
+```sh
+go run ./cmd/unidrop-update preference get
+go run ./cmd/unidrop-update preference set notify-only
+go run ./cmd/unidrop-update preference set automatic
+go run ./cmd/unidrop-update preference set disabled
+```
+
+Selecting `automatic` records intent only. It does not install, execute, or grant
+privileges to an artifact, and it never bypasses the open native-verification and
+installer-integration gates.
+
+## Crash-safe replacement primitive
+
+The updater package includes a replacement primitive for the future native
+installer integration. After an OS-specific installer independently verifies its
+native package, the primitive accepts the signed manifest size and SHA-256:
+
+1. Recover any earlier journal before starting new work.
+2. Re-hash the staged file, copy it to the installed file's directory, re-hash
+   while copying, preserve executable permissions, and synchronize it.
+3. Write a private atomic journal before renaming the working installation.
+4. Move the working file to `.previous.pending`, activate the candidate, and
+   record every durable phase transition.
+5. Run a caller-supplied health check against the activated path.
+6. On success, retain the previous file as `.last-working`; on any earlier or
+   failed-health phase, restore the previous file and leave user data alone.
+
+Recovery verifies the journaled hashes before removing or renaming a managed
+file. It rejects colliding paths, altered candidates, changed pending backups,
+symlinks, public journal permissions on POSIX, unknown phases, and malformed
+state. `unidrop-update recover --journal FILE` provides an idempotent recovery
+entry point for the eventual native installers.
 
 ## Required abuse tests
 
@@ -60,14 +101,16 @@ Coverage must include unsigned and non-canonical metadata, unknown/rotated/revok
 keys, manifest and artifact hash changes, wrong OS/architecture, protocol
 downgrade, expired/future metadata, rollback and freeze attempts, redirect and URL
 confusion, oversized responses, partial/corrupt downloads, offline startup,
-interrupted replacement, health-check failure, and preservation of the previous
+interrupted preference writes and every replacement phase, health-check failure,
+tampered recovery state, idempotent recovery, and preservation of the previous
 working version.
 
 ## Manual staging during development
 
 The helper is intentionally separate from the running client until native
-package verification and recovery are complete. A developer with the reviewed
-release public key can exercise the full metadata and artifact-verification path:
+package verification and installer integration are complete. A developer with
+the reviewed release public key can exercise the full metadata and
+artifact-verification path:
 
 ```sh
 go run ./cmd/unidrop-update stage \

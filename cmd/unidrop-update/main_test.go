@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -486,5 +487,399 @@ func TestUpdateStateRejectsSymlinkAndPublicPermissions(t *testing.T) {
 	}
 	if _, err := readHighestAccepted(realState); err == nil {
 		t.Fatal("publicly readable update state was accepted")
+	}
+}
+
+func TestUpdatePreferenceDefaultsAndRoundTripsPrivately(t *testing.T) {
+	preferencePath := filepath.Join(t.TempDir(), "config", "update-preference.json")
+	if mode, err := readUpdatePreference(preferencePath); err != nil || mode != preferenceNotifyOnly {
+		t.Fatalf("default preference = %q, err=%v", mode, err)
+	}
+	for index, mode := range []string{preferenceAutomatic, preferenceDisabled, preferenceNotifyOnly} {
+		if err := writeUpdatePreference(preferencePath, mode, fixedUpdateTime.Add(time.Duration(index)*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		selected, err := readUpdatePreference(preferencePath)
+		if err != nil || selected != mode {
+			t.Fatalf("round-trip preference = %q, want %q, err=%v", selected, mode, err)
+		}
+		if runtime.GOOS != "windows" {
+			info, statErr := os.Stat(preferencePath)
+			if statErr != nil {
+				t.Fatal(statErr)
+			}
+			if info.Mode().Perm() != 0o600 {
+				t.Fatalf("preference permissions = %o", info.Mode().Perm())
+			}
+		}
+		if _, statErr := os.Lstat(preferencePath + ".previous"); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("completed preference write left previous generation: %v", statErr)
+		}
+	}
+}
+
+func TestInvalidUpdatePreferenceDoesNotReplacePriorValue(t *testing.T) {
+	preferencePath := filepath.Join(t.TempDir(), "config", "update-preference.json")
+	if err := writeUpdatePreference(preferencePath, preferenceDisabled, fixedUpdateTime); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(preferencePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeUpdatePreference(preferencePath, "install-everything", fixedUpdateTime.Add(time.Minute)); err == nil {
+		t.Fatal("invalid preference was accepted")
+	}
+	after, err := os.ReadFile(preferencePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("invalid preference changed the prior value")
+	}
+}
+
+func TestUpdatePreferenceStateAbuseCasesFailClosed(t *testing.T) {
+	tests := map[string][]byte{
+		"unknown field":     []byte(`{"schemaVersion":1,"mode":"automatic","updatedAt":"2026-07-30T16:00:00Z","surprise":true}`),
+		"duplicate field":   []byte(`{"schemaVersion":1,"mode":"automatic","mode":"disabled","updatedAt":"2026-07-30T16:00:00Z"}`),
+		"invalid mode":      []byte(`{"schemaVersion":1,"mode":"unattended","updatedAt":"2026-07-30T16:00:00Z"}`),
+		"invalid timestamp": []byte(`{"schemaVersion":1,"mode":"disabled","updatedAt":"tomorrow"}`),
+		"oversized":         []byte(strings.Repeat("x", int(maxLocalStateBytes)+1)),
+	}
+	for name, encoded := range tests {
+		t.Run(name, func(t *testing.T) {
+			preferencePath := filepath.Join(t.TempDir(), "update-preference.json")
+			if err := os.WriteFile(preferencePath, encoded, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := readUpdatePreference(preferencePath); err == nil {
+				t.Fatal("unsafe preference state was accepted")
+			}
+		})
+	}
+}
+
+func TestInterruptedPreferenceWriteRestoresPreviousGeneration(t *testing.T) {
+	root := t.TempDir()
+	preferencePath := filepath.Join(root, "update-preference.json")
+	previous := updatePreferenceFile{
+		SchemaVersion: 1,
+		Mode:          preferenceAutomatic,
+		UpdatedAt:     fixedUpdateTime.Format(time.RFC3339),
+	}
+	writeTestJSON(t, preferencePath+".previous", previous)
+	mode, err := readUpdatePreference(preferencePath)
+	if err != nil || mode != preferenceAutomatic {
+		t.Fatalf("recovered preference = %q, err=%v", mode, err)
+	}
+	if _, err := os.Stat(preferencePath); err != nil {
+		t.Fatal("previous preference generation was not restored", err)
+	}
+	if _, err := os.Lstat(preferencePath + ".previous"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("previous generation remains after recovery: %v", err)
+	}
+}
+
+func TestUpdatePreferenceRejectsSymlinkAndPublicPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation and POSIX modes are not portable to Windows")
+	}
+	root := t.TempDir()
+	realPreference := filepath.Join(root, "real-preference.json")
+	writeTestJSON(t, realPreference, updatePreferenceFile{
+		SchemaVersion: 1, Mode: preferenceNotifyOnly, UpdatedAt: fixedUpdateTime.Format(time.RFC3339),
+	})
+	link := filepath.Join(root, "preference-link.json")
+	if err := os.Symlink(realPreference, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readUpdatePreference(link); err == nil {
+		t.Fatal("symlink preference was accepted")
+	}
+	if err := os.Chmod(realPreference, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readUpdatePreference(realPreference); err == nil {
+		t.Fatal("publicly readable preference was accepted")
+	}
+}
+
+func TestVerifiedReplacementKeepsLastWorkingBackup(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "unidrop")
+	staged := filepath.Join(root, "staged-update")
+	journal := filepath.Join(root, "state", "replacement.json")
+	oldBytes := []byte("working release\n")
+	newBytes := []byte("verified update\n")
+	writeTestFile(t, target, oldBytes, 0o755)
+	writeTestFile(t, staged, newBytes, 0o600)
+	newSize, newDigest := testArtifactMetadata(newBytes)
+	backup, err := replaceVerifiedArtifact(staged, target, journal, newSize, newDigest, func(installed string) error {
+		actual, readErr := os.ReadFile(installed)
+		if readErr != nil {
+			return readErr
+		}
+		if string(actual) != string(newBytes) {
+			return errors.New("health check saw unexpected bytes")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if backup != target+".last-working" {
+		t.Fatalf("backup path = %q", backup)
+	}
+	assertFileBytes(t, target, newBytes)
+	assertFileBytes(t, backup, oldBytes)
+	assertReplacementStateCleared(t, target, journal)
+}
+
+func TestFailedReplacementHealthCheckRollsBackAndPreservesStableBackup(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "unidrop")
+	staged := filepath.Join(root, "staged-update")
+	journal := filepath.Join(root, "state", "replacement.json")
+	oldBytes := []byte("working release\n")
+	olderBytes := []byte("older fallback\n")
+	newBytes := []byte("bad update\n")
+	writeTestFile(t, target, oldBytes, 0o755)
+	writeTestFile(t, target+".last-working", olderBytes, 0o755)
+	writeTestFile(t, staged, newBytes, 0o600)
+	newSize, newDigest := testArtifactMetadata(newBytes)
+	_, err := replaceVerifiedArtifact(staged, target, journal, newSize, newDigest, func(string) error {
+		return errors.New("process did not become healthy")
+	})
+	if err == nil || !strings.Contains(err.Error(), "rolled back") {
+		t.Fatalf("health-check error = %v", err)
+	}
+	assertFileBytes(t, target, oldBytes)
+	assertFileBytes(t, target+".last-working", olderBytes)
+	assertReplacementStateCleared(t, target, journal)
+}
+
+func TestReplacementRejectsChangedStagedArtifactWithoutTouchingInstallation(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "unidrop")
+	staged := filepath.Join(root, "staged-update")
+	journal := filepath.Join(root, "state", "replacement.json")
+	oldBytes := []byte("working release\n")
+	signedBytes := []byte("signed update\n")
+	writeTestFile(t, target, oldBytes, 0o755)
+	writeTestFile(t, staged, []byte("tampered update\n"), 0o600)
+	signedSize, signedDigest := testArtifactMetadata(signedBytes)
+	if _, err := replaceVerifiedArtifact(staged, target, journal, signedSize, signedDigest, func(string) error { return nil }); err == nil {
+		t.Fatal("changed staged artifact was accepted")
+	}
+	assertFileBytes(t, target, oldBytes)
+	assertAbsent(t, journal)
+	assertAbsent(t, target+".previous.pending")
+	assertAbsent(t, target+".last-working")
+}
+
+func TestReplacementRejectsHardLinkedStagedAndInstalledPaths(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "unidrop")
+	staged := filepath.Join(root, "staged-update")
+	journal := filepath.Join(root, "state", "replacement.json")
+	installedBytes := []byte("working release\n")
+	writeTestFile(t, target, installedBytes, 0o755)
+	if err := os.Link(target, staged); err != nil {
+		t.Skipf("hard links are unavailable: %v", err)
+	}
+	size, digest := testArtifactMetadata(installedBytes)
+	if _, err := replaceVerifiedArtifact(staged, target, journal, size, digest, func(string) error { return nil }); err == nil {
+		t.Fatal("hard-linked staged and installed paths were accepted")
+	}
+	assertFileBytes(t, target, installedBytes)
+	assertFileBytes(t, staged, installedBytes)
+	assertAbsent(t, journal)
+}
+
+func TestInterruptedReplacementRecoveryIsPhaseAwareAndIdempotent(t *testing.T) {
+	tests := []struct {
+		phase          string
+		targetBytes    []byte
+		pendingBytes   []byte
+		candidateBytes []byte
+		wantTarget     []byte
+		wantBackup     []byte
+	}{
+		{phase: replacementPrepared, targetBytes: []byte("old\n"), candidateBytes: []byte("new\n"), wantTarget: []byte("old\n")},
+		{phase: replacementTargetMoved, pendingBytes: []byte("old\n"), candidateBytes: []byte("new\n"), wantTarget: []byte("old\n")},
+		{phase: replacementReplaced, targetBytes: []byte("new\n"), pendingBytes: []byte("old\n"), wantTarget: []byte("old\n")},
+		{phase: replacementHealthy, targetBytes: []byte("new\n"), pendingBytes: []byte("old\n"), wantTarget: []byte("new\n"), wantBackup: []byte("old\n")},
+	}
+	for _, test := range tests {
+		t.Run(test.phase, func(t *testing.T) {
+			root := t.TempDir()
+			target := filepath.Join(root, "unidrop")
+			candidate := filepath.Join(root, ".unidrop-candidate-test")
+			pending := target + ".previous.pending"
+			backup := target + ".last-working"
+			journalPath := filepath.Join(root, "state", "replacement.json")
+			if test.targetBytes != nil {
+				writeTestFile(t, target, test.targetBytes, 0o755)
+			}
+			if test.pendingBytes != nil {
+				writeTestFile(t, pending, test.pendingBytes, 0o755)
+			}
+			if test.candidateBytes != nil {
+				writeTestFile(t, candidate, test.candidateBytes, 0o755)
+			}
+			oldSize, oldDigest := testArtifactMetadata([]byte("old\n"))
+			newSize, newDigest := testArtifactMetadata([]byte("new\n"))
+			journal := replacementJournal{
+				SchemaVersion: 1, Phase: test.phase,
+				TargetPath: target, CandidatePath: candidate, PendingBackupPath: pending, BackupPath: backup,
+				PreviousSize: oldSize, PreviousSHA256: oldDigest, CandidateSize: newSize, CandidateSHA256: newDigest,
+			}
+			if err := writeReplacementJournal(journalPath, &journal); err != nil {
+				t.Fatal(err)
+			}
+			if err := recoverReplacement(journalPath); err != nil {
+				t.Fatal(err)
+			}
+			if err := recoverReplacement(journalPath); err != nil {
+				t.Fatalf("second recovery was not idempotent: %v", err)
+			}
+			assertFileBytes(t, target, test.wantTarget)
+			if test.wantBackup == nil {
+				assertAbsent(t, backup)
+			} else {
+				assertFileBytes(t, backup, test.wantBackup)
+			}
+			assertReplacementStateCleared(t, target, journalPath)
+		})
+	}
+}
+
+func TestReplacementRecoveryRejectsTamperedStateWithoutTouchingInstalledFile(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "unidrop")
+	journalPath := filepath.Join(root, "state", "replacement.json")
+	oldBytes := []byte("working release\n")
+	newBytes := []byte("new release\n")
+	writeTestFile(t, target, oldBytes, 0o755)
+	oldSize, oldDigest := testArtifactMetadata(oldBytes)
+	newSize, newDigest := testArtifactMetadata(newBytes)
+	journal := replacementJournal{
+		SchemaVersion: 1, Phase: replacementPrepared,
+		TargetPath: target, CandidatePath: journalPath, PendingBackupPath: target + ".previous.pending", BackupPath: target + ".last-working",
+		PreviousSize: oldSize, PreviousSHA256: oldDigest, CandidateSize: newSize, CandidateSHA256: newDigest,
+		UpdatedAt: fixedUpdateTime.Format(time.RFC3339Nano),
+	}
+	writeTestJSON(t, journalPath, journal)
+	if err := recoverReplacement(journalPath); err == nil {
+		t.Fatal("colliding journal state was accepted")
+	}
+	assertFileBytes(t, target, oldBytes)
+}
+
+func TestReplacementRecoveryRejectsChangedPendingBackupBeforeRemovingTarget(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "unidrop")
+	pending := target + ".previous.pending"
+	candidate := filepath.Join(root, ".unidrop-candidate-test")
+	journalPath := filepath.Join(root, "state", "replacement.json")
+	oldBytes := []byte("old release\n")
+	newBytes := []byte("new release\n")
+	writeTestFile(t, target, newBytes, 0o755)
+	writeTestFile(t, pending, []byte("tampered backup\n"), 0o755)
+	oldSize, oldDigest := testArtifactMetadata(oldBytes)
+	newSize, newDigest := testArtifactMetadata(newBytes)
+	journal := replacementJournal{
+		SchemaVersion: 1, Phase: replacementReplaced,
+		TargetPath: target, CandidatePath: candidate, PendingBackupPath: pending, BackupPath: target + ".last-working",
+		PreviousSize: oldSize, PreviousSHA256: oldDigest, CandidateSize: newSize, CandidateSHA256: newDigest,
+	}
+	if err := writeReplacementJournal(journalPath, &journal); err != nil {
+		t.Fatal(err)
+	}
+	if err := recoverReplacement(journalPath); err == nil {
+		t.Fatal("changed pending backup was accepted")
+	}
+	assertFileBytes(t, target, newBytes)
+	assertFileBytes(t, pending, []byte("tampered backup\n"))
+}
+
+func TestReplacementJournalRejectsSymlinkAndPublicPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation and POSIX modes are not portable to Windows")
+	}
+	root := t.TempDir()
+	realJournal := filepath.Join(root, "real-journal.json")
+	writeTestJSON(t, realJournal, map[string]any{"not": "trusted"})
+	link := filepath.Join(root, "journal-link.json")
+	if err := os.Symlink(realJournal, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := recoverReplacement(link); err == nil {
+		t.Fatal("symlink replacement journal was accepted")
+	}
+	if err := os.Chmod(realJournal, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := recoverReplacement(realJournal); err == nil {
+		t.Fatal("publicly readable replacement journal was accepted")
+	}
+}
+
+func writeTestFile(t *testing.T, filePath string, contents []byte, mode os.FileMode) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(filePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filePath, contents, mode); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeTestJSON(t *testing.T, filePath string, value any) {
+	t.Helper()
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filePath, append(encoded, '\n'), 0o600)
+}
+
+func testArtifactMetadata(contents []byte) (int64, string) {
+	digest := sha256.Sum256(contents)
+	return int64(len(contents)), hex.EncodeToString(digest[:])
+}
+
+func assertFileBytes(t *testing.T, filePath string, want []byte) {
+	t.Helper()
+	actual, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(actual) != string(want) {
+		t.Fatalf("%s = %q, want %q", filePath, actual, want)
+	}
+}
+
+func assertAbsent(t *testing.T, filePath string) {
+	t.Helper()
+	if _, err := os.Lstat(filePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected %s to be absent, err=%v", filePath, err)
+	}
+}
+
+func assertReplacementStateCleared(t *testing.T, target, journal string) {
+	t.Helper()
+	assertAbsent(t, target+".previous.pending")
+	assertAbsent(t, journal)
+	assertAbsent(t, journal+".previous")
+	entries, err := os.ReadDir(filepath.Dir(target))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".unidrop-candidate-") {
+			t.Fatalf("replacement candidate remains: %s", entry.Name())
+		}
 	}
 }

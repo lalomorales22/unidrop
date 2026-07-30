@@ -84,6 +84,10 @@ The token in `control-token` prevents an unrelated web page from invoking filesy
 - Process model: separate user services keep the secure core independent from desktop tray availability
 - Receive notification: `notify-send` when installed
 - Fallback: application-menu/browser control panel when the desktop has no StatusNotifier host
+- Development Flatpak: source-built offline under the provisional
+  `io.github.lalomorales22.unidrop` ID, with only LAN networking, the dedicated
+  Downloads subdirectory, and scoped StatusNotifier D-Bus names exposed; see
+  `docs/FLATPAK.md` for the unfulfilled distribution gates
 
 ### Windows
 
