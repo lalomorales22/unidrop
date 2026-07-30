@@ -91,7 +91,7 @@ download, install, verify, update, and remove.
   `THIRD_PARTY_NOTICES.md`.
 - [ ] Document that the UniDrop name and logo are not granted for confusing or
   impersonating distributions, if that is the owner's chosen trademark policy.
-- [ ] Search relevant trademark records and domain availability before spending
+- [x] Search relevant trademark records and domain availability before spending
   materially on the brand.
 - [x] Add a public project contact, private security-reporting address, Code of
   Conduct, contributing guide, issue templates, and pull-request template.
