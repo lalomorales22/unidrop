@@ -30,55 +30,59 @@ build() {
   (cd "$SCRIPT_DIR" && CGO_ENABLED=0 GOOS=linux GOARCH="$TARGET_ARCH" "$GO_BINARY" build \
     -mod=vendor -trimpath -ldflags="$linker_flags" -o "$output" "$package")
 }
-build . "$DIST_DIR/unidrop-linux-$TARGET_ARCH" "-s -w -X main.appVersion=$VERSION"
-build ./cmd/unidrop-tray "$DIST_DIR/unidrop-tray-linux-$TARGET_ARCH" "-s -w -X main.appVersion=$VERSION"
-build ./cmd/unidrop-update "$DIST_DIR/unidrop-update-linux-$TARGET_ARCH" "-s -w"
+build . "$DIST_DIR/xendfile-linux-$TARGET_ARCH" "-s -w -X main.appVersion=$VERSION"
+build ./cmd/xendfile-tray "$DIST_DIR/xendfile-tray-linux-$TARGET_ARCH" "-s -w -X main.appVersion=$VERSION"
+build ./cmd/xendfile-update "$DIST_DIR/xendfile-update-linux-$TARGET_ARCH" "-s -w"
 
-WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/unidrop-appimage.XXXXXX")
+WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/xendfile-appimage.XXXXXX")
 trap 'rm -rf "$WORK_DIR"' EXIT HUP INT TERM
-APP_DIR="$WORK_DIR/UniDrop.AppDir"
+APP_DIR="$WORK_DIR/Xendfile.AppDir"
 mkdir -p \
   "$APP_DIR/usr/bin" \
   "$APP_DIR/usr/share/applications" \
   "$APP_DIR/usr/share/icons/hicolor/scalable/apps" \
   "$APP_DIR/usr/share/metainfo" \
-  "$APP_DIR/usr/share/doc/unidrop"
+  "$APP_DIR/usr/share/doc/xendfile"
 
-cp "$DIST_DIR/unidrop-linux-$TARGET_ARCH" "$APP_DIR/usr/bin/unidrop"
-cp "$DIST_DIR/unidrop-tray-linux-$TARGET_ARCH" "$APP_DIR/usr/bin/unidrop-tray"
-cp "$DIST_DIR/unidrop-update-linux-$TARGET_ARCH" "$APP_DIR/usr/bin/unidrop-update"
+cp "$DIST_DIR/xendfile-linux-$TARGET_ARCH" "$APP_DIR/usr/bin/xendfile"
+cp "$DIST_DIR/xendfile-tray-linux-$TARGET_ARCH" "$APP_DIR/usr/bin/xendfile-tray"
+cp "$DIST_DIR/xendfile-update-linux-$TARGET_ARCH" "$APP_DIR/usr/bin/xendfile-update"
 cp "$SCRIPT_DIR/linux/AppRun" "$APP_DIR/AppRun"
-cp "$SCRIPT_DIR/linux/unidrop.desktop" "$APP_DIR/usr/share/applications/unidrop.desktop"
-cp "$SCRIPT_DIR/linux/unidrop.svg" "$APP_DIR/usr/share/icons/hicolor/scalable/apps/unidrop.svg"
-cp "$SCRIPT_DIR/linux/AppImage-runtime-LICENSE" "$APP_DIR/usr/share/doc/unidrop/AppImage-runtime-LICENSE"
+cp "$SCRIPT_DIR/linux/xendfile.desktop" "$APP_DIR/usr/share/applications/xendfile.desktop"
+cp "$SCRIPT_DIR/linux/xendfile.svg" "$APP_DIR/usr/share/icons/hicolor/scalable/apps/xendfile.svg"
+cp "$SCRIPT_DIR/linux/AppImage-runtime-LICENSE" "$APP_DIR/usr/share/doc/xendfile/AppImage-runtime-LICENSE"
+cp "$SCRIPT_DIR/LICENSE" "$SCRIPT_DIR/NOTICE" "$SCRIPT_DIR/THIRD_PARTY_NOTICES.md" "$APP_DIR/usr/share/doc/xendfile/"
 sed -e "s/__VERSION__/$VERSION/g" -e "s/__RELEASE_DATE__/$RELEASE_DATE/g" \
-  "$SCRIPT_DIR/linux/com.unidrop.app.metainfo.xml" > "$APP_DIR/usr/share/metainfo/com.unidrop.app.metainfo.xml"
-chmod 755 "$APP_DIR/AppRun" "$APP_DIR/usr/bin/unidrop" "$APP_DIR/usr/bin/unidrop-tray" "$APP_DIR/usr/bin/unidrop-update"
-ln -s usr/share/applications/unidrop.desktop "$APP_DIR/unidrop.desktop"
-ln -s usr/share/icons/hicolor/scalable/apps/unidrop.svg "$APP_DIR/unidrop.svg"
-ln -s unidrop.svg "$APP_DIR/.DirIcon"
+  "$SCRIPT_DIR/linux/io.github.lalomorales22.xendfile.appimage.metainfo.xml" > "$APP_DIR/usr/share/metainfo/io.github.lalomorales22.xendfile.metainfo.xml"
+chmod 755 "$APP_DIR/AppRun" "$APP_DIR/usr/bin/xendfile" "$APP_DIR/usr/bin/xendfile-tray" "$APP_DIR/usr/bin/xendfile-update"
+ln -s usr/share/applications/xendfile.desktop "$APP_DIR/xendfile.desktop"
+ln -s usr/share/icons/hicolor/scalable/apps/xendfile.svg "$APP_DIR/xendfile.svg"
+ln -s xendfile.svg "$APP_DIR/.DirIcon"
 
 if command -v desktop-file-validate >/dev/null 2>&1; then
-  desktop-file-validate "$APP_DIR/usr/share/applications/unidrop.desktop"
+  desktop-file-validate "$APP_DIR/usr/share/applications/xendfile.desktop"
 fi
 if command -v appstreamcli >/dev/null 2>&1; then
-  appstreamcli validate --no-net "$APP_DIR/usr/share/metainfo/com.unidrop.app.metainfo.xml"
+  appstreamcli validate --no-net "$APP_DIR/usr/share/metainfo/io.github.lalomorales22.xendfile.metainfo.xml"
 fi
 
-OUTPUT="$DIST_DIR/unidrop-$VERSION-linux-$TARGET_ARCH.AppImage"
+OUTPUT="$DIST_DIR/xendfile-$VERSION-linux-$TARGET_ARCH.AppImage"
 rm -f "$OUTPUT"
 APPIMAGE_EXTRACT_AND_RUN=1 ARCH="$APPIMAGE_ARCH" VERSION="$VERSION" SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
   "$APPIMAGETOOL" --runtime-file "$APPIMAGE_RUNTIME" "$APP_DIR" "$OUTPUT"
 chmod 755 "$OUTPUT"
 
-APPIMAGE_EXTRACT_AND_RUN=1 "$OUTPUT" --version | grep -F "UniDrop $VERSION" >/dev/null
+APPIMAGE_EXTRACT_AND_RUN=1 "$OUTPUT" --version | grep -F "Xendfile $VERSION" >/dev/null
 EXTRACT_DIR="$WORK_DIR/extracted"
 mkdir -p "$EXTRACT_DIR"
 (cd "$EXTRACT_DIR" && "$OUTPUT" --appimage-extract >/dev/null)
 test -x "$EXTRACT_DIR/squashfs-root/AppRun"
-test -x "$EXTRACT_DIR/squashfs-root/usr/bin/unidrop"
-test -x "$EXTRACT_DIR/squashfs-root/usr/bin/unidrop-tray"
-test -x "$EXTRACT_DIR/squashfs-root/usr/bin/unidrop-update"
-test -f "$EXTRACT_DIR/squashfs-root/usr/share/metainfo/com.unidrop.app.metainfo.xml"
-test -f "$EXTRACT_DIR/squashfs-root/usr/share/doc/unidrop/AppImage-runtime-LICENSE"
+test -x "$EXTRACT_DIR/squashfs-root/usr/bin/xendfile"
+test -x "$EXTRACT_DIR/squashfs-root/usr/bin/xendfile-tray"
+test -x "$EXTRACT_DIR/squashfs-root/usr/bin/xendfile-update"
+test -f "$EXTRACT_DIR/squashfs-root/usr/share/metainfo/io.github.lalomorales22.xendfile.metainfo.xml"
+test -f "$EXTRACT_DIR/squashfs-root/usr/share/doc/xendfile/AppImage-runtime-LICENSE"
+test -f "$EXTRACT_DIR/squashfs-root/usr/share/doc/xendfile/LICENSE"
+test -f "$EXTRACT_DIR/squashfs-root/usr/share/doc/xendfile/NOTICE"
+test -f "$EXTRACT_DIR/squashfs-root/usr/share/doc/xendfile/THIRD_PARTY_NOTICES.md"
 printf 'Created and verified %s\n' "$OUTPUT"

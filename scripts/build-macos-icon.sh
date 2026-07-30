@@ -2,9 +2,9 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
-SOURCE="$SCRIPT_DIR/linux/unidrop.svg"
-OUTPUT="$SCRIPT_DIR/macos/UniDrop.icns"
-WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/unidrop-icon.XXXXXX")
+SOURCE="$SCRIPT_DIR/linux/xendfile.svg"
+OUTPUT="$SCRIPT_DIR/macos/Xendfile.icns"
+WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/xendfile-icon.XXXXXX")
 trap 'rm -rf "$WORK_DIR"' EXIT HUP INT TERM
 
 [ "$(uname -s)" = "Darwin" ] || { printf '%s\n' 'The macOS icon must be built on macOS.' >&2; exit 1; }
@@ -14,9 +14,9 @@ done
 
 qlmanage -t -s 1024 -o "$WORK_DIR" "$SOURCE" >/dev/null 2>&1
 SOURCE_PNG=$(find "$WORK_DIR" -maxdepth 1 -type f -name '*.png' -print | head -n 1)
-[ -n "$SOURCE_PNG" ] || { printf '%s\n' 'Quick Look did not render the UniDrop SVG.' >&2; exit 1; }
+[ -n "$SOURCE_PNG" ] || { printf '%s\n' 'Quick Look did not render the Xendfile SVG.' >&2; exit 1; }
 
-ICONSET="$WORK_DIR/UniDrop.iconset"
+ICONSET="$WORK_DIR/Xendfile.iconset"
 mkdir -p "$ICONSET"
 render() {
   pixels=$1

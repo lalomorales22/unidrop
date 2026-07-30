@@ -71,4 +71,4 @@ try {
   if (error.code !== "ENOENT") throw error;
 }
 
-console.log("Built UniDrop landing page in dist/");
+console.log("Built Xendfile landing page in dist/");

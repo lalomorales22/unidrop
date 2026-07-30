@@ -35,8 +35,9 @@ for (const name of (await readdir(dist)).sort()) {
   if (checksums.get(name) !== await sha256(path)) fail(`${name} has a checksum mismatch`);
 }
 
-const manifestName = `unidrop-${version}-manifest.json`;
+const manifestName = `xendfile-${version}-manifest.json`;
 const manifest = JSON.parse(await readFile(join(dist, manifestName), "utf8"));
+if (manifest.product !== "Xendfile") fail("manifest product does not match Xendfile");
 if (manifest.version !== version || manifest.tag !== `v${version}`) fail("manifest version does not match the canonical version");
 if (!Number.isFinite(Date.parse(manifest.publishedAt)) || !Number.isFinite(Date.parse(manifest.expiresAt))) fail("manifest validity window is invalid");
 if (Date.parse(manifest.expiresAt) <= Date.parse(manifest.publishedAt)) fail("manifest expires before it is published");
@@ -52,7 +53,7 @@ for (const platform of ["darwin", "linux", "windows"]) {
     }
   }
 }
-const developmentDMG = manifest.artifacts.find((artifact) => artifact.name === `unidrop-${version}-macos-universal.dmg`);
+const developmentDMG = manifest.artifacts.find((artifact) => artifact.name === `xendfile-${version}-macos-universal.dmg`);
 if (developmentDMG && (
   developmentDMG.component !== "package" ||
   developmentDMG.platform !== "darwin" ||
@@ -63,7 +64,7 @@ if (developmentDMG && (
 const appImages = manifest.artifacts.filter((artifact) => artifact.name.endsWith(".AppImage"));
 if (appImages.length > 0) {
   for (const architecture of ["amd64", "arm64"]) {
-    const name = `unidrop-${version}-linux-${architecture}.AppImage`;
+    const name = `xendfile-${version}-linux-${architecture}.AppImage`;
     if (!appImages.some((artifact) =>
       artifact.name === name &&
       artifact.component === "package" &&
@@ -89,10 +90,15 @@ for (const artifact of manifest.artifacts) {
   if (!artifact.url.endsWith(`/${encodeURIComponent(artifact.name)}`)) fail(`${artifact.name} URL is invalid`);
 }
 
-const sbom = JSON.parse(await readFile(join(dist, `unidrop-${version}.spdx.json`), "utf8"));
+const sbom = JSON.parse(await readFile(join(dist, `xendfile-${version}.spdx.json`), "utf8"));
 if (sbom.spdxVersion !== "SPDX-2.3" || sbom.dataLicense !== "CC0-1.0") fail("SBOM header is invalid");
-if (!sbom.packages?.some((item) => item.name === "UniDrop" && item.versionInfo === version)) fail("SBOM is missing the UniDrop package");
+if (!sbom.packages?.some((item) =>
+  item.name === "Xendfile" &&
+  item.versionInfo === version &&
+  item.licenseDeclared === "Apache-2.0" &&
+  item.licenseConcluded === "Apache-2.0"
+)) fail("SBOM is missing the Apache-2.0 Xendfile package");
 if (!sbom.packages?.some((item) => item.name === "github.com/godbus/dbus/v5" && item.versionInfo === "v5.2.2")) fail("SBOM is missing godbus");
 if (!sbom.packages?.some((item) => item.name === "golang.org/x/sys" && item.versionInfo === "v0.44.0")) fail("SBOM is missing x/sys");
 
-console.log(`Verified ${checksums.size} release files for UniDrop ${version}`);
+console.log(`Verified ${checksums.size} release files for Xendfile ${version}`);

@@ -13,6 +13,15 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
+func TestLegacyConfigOverrideRemainsCompatible(t *testing.T) {
+	legacy := filepath.Join(t.TempDir(), "legacy")
+	t.Setenv("XENDFILE_CONFIG_DIR", "")
+	t.Setenv("UNIDROP_CONFIG_DIR", legacy)
+	if got := compatibleConfigDirectory(t.TempDir()); got != legacy {
+		t.Fatalf("config directory = %q, want %q", got, legacy)
+	}
+}
+
 func TestDBusWireSignatures(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -117,7 +126,7 @@ func TestMenuLayoutReflectsLiveSummary(t *testing.T) {
 		t.Fatalf("radio state ask=%d trusted=%d", ask, trusted)
 	}
 	filtered := app.menuProperties(menuOpen, []string{"label"})
-	if len(filtered) != 1 || filtered["label"].Value().(string) != "Open UniDrop — 2 waiting" {
+	if len(filtered) != 1 || filtered["label"].Value().(string) != "Open Xendfile — 2 waiting" {
 		t.Fatalf("filtered properties=%v", filtered)
 	}
 }

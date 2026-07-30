@@ -1,4 +1,4 @@
-// UniDrop's Windows shell owns the notification-area experience while the
+// Xendfile's Windows shell owns the notification-area experience while the
 // console-capable core continues to own discovery, trust, and file transfer.
 package main
 
@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	appversion "unidrop/internal/version"
+	appversion "xendfile/internal/version"
 )
 
 var appVersion = appversion.Current
@@ -42,26 +42,44 @@ type coreClient struct {
 func newCoreClient(baseURL string) (*coreClient, error) {
 	parsed, err := url.Parse(strings.TrimSpace(baseURL))
 	if err != nil {
-		return nil, errors.New("the UniDrop tray UI must use an HTTP loopback address")
+		return nil, errors.New("the Xendfile tray UI must use an HTTP loopback address")
 	}
 	loopback := parsed.Hostname() == "127.0.0.1" || parsed.Hostname() == "localhost" || parsed.Hostname() == "::1"
 	cleanPath := parsed.Path == "" || parsed.Path == "/"
 	if parsed.Scheme != "http" || !loopback || !cleanPath || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return nil, errors.New("the UniDrop tray UI must use an HTTP loopback address")
+		return nil, errors.New("the Xendfile tray UI must use an HTTP loopback address")
 	}
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return nil, fmt.Errorf("find config directory: %w", err)
 	}
-	configDir = filepath.Join(configDir, "UniDrop")
-	if override := strings.TrimSpace(os.Getenv("UNIDROP_CONFIG_DIR")); override != "" {
-		configDir = override
-	}
+	configDir = compatibleConfigDirectory(configDir)
 	return &coreClient{
 		baseURL:   strings.TrimRight(baseURL, "/") + "/",
 		configDir: configDir,
 		http:      &http.Client{Timeout: 2 * time.Second},
 	}, nil
+}
+
+func compatibleConfigDirectory(configBase string) string {
+	if override := environmentValue("XENDFILE_CONFIG_DIR", "UNIDROP_CONFIG_DIR"); override != "" {
+		return override
+	}
+	current := filepath.Join(configBase, "Xendfile")
+	if _, err := os.Lstat(current); errors.Is(err, os.ErrNotExist) {
+		legacy := filepath.Join(configBase, "UniDrop")
+		if info, legacyErr := os.Lstat(legacy); legacyErr == nil && info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+			return legacy
+		}
+	}
+	return current
+}
+
+func environmentValue(primary, legacy string) string {
+	if value := strings.TrimSpace(os.Getenv(primary)); value != "" {
+		return value
+	}
+	return strings.TrimSpace(os.Getenv(legacy))
 }
 
 func (c *coreClient) summary() (coreSummary, error) {
@@ -135,14 +153,14 @@ func (c *coreClient) post(path string, body any) error {
 func (c *coreClient) controlToken() (string, error) {
 	data, err := os.ReadFile(filepath.Join(c.configDir, "control-token"))
 	if err != nil {
-		return "", fmt.Errorf("read UniDrop control token: %w", err)
+		return "", fmt.Errorf("read Xendfile control token: %w", err)
 	}
 	token := strings.TrimSpace(string(data))
 	if len(token) != 64 {
-		return "", errors.New("invalid UniDrop control token")
+		return "", errors.New("invalid Xendfile control token")
 	}
 	if _, err := hex.DecodeString(token); err != nil {
-		return "", errors.New("invalid UniDrop control token")
+		return "", errors.New("invalid Xendfile control token")
 	}
 	return token, nil
 }
@@ -156,7 +174,7 @@ func responseError(response *http.Response) error {
 	if strings.TrimSpace(payload.Error) != "" {
 		return errors.New(payload.Error)
 	}
-	return fmt.Errorf("UniDrop returned %s", response.Status)
+	return fmt.Errorf("Xendfile returned %s", response.Status)
 }
 
 type iconState int
@@ -170,18 +188,18 @@ const (
 
 func statusPresentation(summary coreSummary) (tooltip string, state iconState) {
 	if !summary.Available {
-		return "UniDrop - reconnecting", iconOffline
+		return "Xendfile - reconnecting", iconOffline
 	}
 	if summary.Pending > 0 {
-		return fmt.Sprintf("UniDrop - %d request%s waiting", summary.Pending, pluralSuffix(summary.Pending)), iconAttention
+		return fmt.Sprintf("Xendfile - %d request%s waiting", summary.Pending, pluralSuffix(summary.Pending)), iconAttention
 	}
 	if summary.Nearby > 0 {
-		return fmt.Sprintf("UniDrop - %d nearby", summary.Nearby), iconNearby
+		return fmt.Sprintf("Xendfile - %d nearby", summary.Nearby), iconNearby
 	}
 	if summary.ReceiveMode == "off" {
-		return "UniDrop - receiving paused", iconNormal
+		return "Xendfile - receiving paused", iconNormal
 	}
-	return "UniDrop - searching nearby", iconNormal
+	return "Xendfile - searching nearby", iconNormal
 }
 
 func pluralSuffix(count int) string {
@@ -193,9 +211,9 @@ func pluralSuffix(count int) string {
 
 func summaryLabel(summary coreSummary) string {
 	if !summary.Available {
-		return "UniDrop - reconnecting"
+		return "Xendfile - reconnecting"
 	}
-	return fmt.Sprintf("UniDrop - %d nearby - %d waiting", summary.Nearby, summary.Pending)
+	return fmt.Sprintf("Xendfile - %d nearby - %d waiting", summary.Nearby, summary.Pending)
 }
 
 func waitForCore(client *coreClient, timeout time.Duration) coreSummary {
@@ -216,7 +234,7 @@ func setupLog() {
 	if err != nil {
 		return
 	}
-	logDir := filepath.Join(configDir, "UniDrop")
+	logDir := filepath.Join(configDir, "Xendfile")
 	if err := os.MkdirAll(logDir, 0700); err != nil {
 		return
 	}
@@ -227,16 +245,16 @@ func setupLog() {
 }
 
 func main() {
-	baseURL := flag.String("ui", defaultUIURL, "UniDrop loopback control-panel URL")
+	baseURL := flag.String("ui", defaultUIURL, "Xendfile loopback control-panel URL")
 	showVersion := flag.Bool("version", false, "show version and exit")
 	openOnStart := flag.Bool("open", false, "open the control panel after starting")
 	flag.Parse()
 	if *showVersion {
-		fmt.Printf("UniDrop Windows Tray %s\n", appVersion)
+		fmt.Printf("Xendfile Windows Tray %s\n", appVersion)
 		return
 	}
 	setupLog()
 	if err := runTray(*baseURL, *openOnStart); err != nil {
-		log.Printf("UniDrop Windows tray stopped: %v", err)
+		log.Printf("Xendfile Windows tray stopped: %v", err)
 	}
 }

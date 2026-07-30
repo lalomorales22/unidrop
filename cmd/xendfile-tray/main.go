@@ -1,4 +1,4 @@
-// UniDrop's Linux shell implements the Freedesktop StatusNotifierItem protocol.
+// Xendfile's Linux shell implements the Freedesktop StatusNotifierItem protocol.
 // It deliberately stays small: the secure transfer core owns all file/network
 // state, while this process owns the desktop tray icon and menu.
 package main
@@ -27,7 +27,7 @@ import (
 	"github.com/godbus/dbus/v5"
 	"github.com/godbus/dbus/v5/introspect"
 	"github.com/godbus/dbus/v5/prop"
-	appversion "unidrop/internal/version"
+	appversion "xendfile/internal/version"
 )
 
 var appVersion = appversion.Current
@@ -101,26 +101,44 @@ type coreClient struct {
 func newCoreClient(baseURL string) (*coreClient, error) {
 	parsed, err := url.Parse(strings.TrimSpace(baseURL))
 	if err != nil {
-		return nil, errors.New("the UniDrop tray UI must use an HTTP loopback address")
+		return nil, errors.New("the Xendfile tray UI must use an HTTP loopback address")
 	}
 	loopback := parsed.Hostname() == "127.0.0.1" || parsed.Hostname() == "localhost" || parsed.Hostname() == "::1"
 	cleanPath := parsed.Path == "" || parsed.Path == "/"
 	if parsed.Scheme != "http" || !loopback || !cleanPath || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return nil, errors.New("the UniDrop tray UI must use an HTTP loopback address")
+		return nil, errors.New("the Xendfile tray UI must use an HTTP loopback address")
 	}
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return nil, fmt.Errorf("find config directory: %w", err)
 	}
-	configDir = filepath.Join(configDir, "UniDrop")
-	if override := strings.TrimSpace(os.Getenv("UNIDROP_CONFIG_DIR")); override != "" {
-		configDir = override
-	}
+	configDir = compatibleConfigDirectory(configDir)
 	return &coreClient{
 		baseURL:   strings.TrimRight(baseURL, "/") + "/",
 		configDir: configDir,
 		http:      &http.Client{Timeout: 2 * time.Second},
 	}, nil
+}
+
+func compatibleConfigDirectory(configBase string) string {
+	if override := environmentValue("XENDFILE_CONFIG_DIR", "UNIDROP_CONFIG_DIR"); override != "" {
+		return override
+	}
+	current := filepath.Join(configBase, "Xendfile")
+	if _, err := os.Lstat(current); errors.Is(err, os.ErrNotExist) {
+		legacy := filepath.Join(configBase, "UniDrop")
+		if info, legacyErr := os.Lstat(legacy); legacyErr == nil && info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+			return legacy
+		}
+	}
+	return current
+}
+
+func environmentValue(primary, legacy string) string {
+	if value := strings.TrimSpace(os.Getenv(primary)); value != "" {
+		return value
+	}
+	return strings.TrimSpace(os.Getenv(legacy))
 }
 
 func (c *coreClient) summary() (coreSummary, error) {
@@ -194,14 +212,14 @@ func (c *coreClient) post(path string, body any) error {
 func (c *coreClient) controlToken() (string, error) {
 	data, err := os.ReadFile(filepath.Join(c.configDir, "control-token"))
 	if err != nil {
-		return "", fmt.Errorf("read UniDrop control token: %w", err)
+		return "", fmt.Errorf("read Xendfile control token: %w", err)
 	}
 	token := strings.TrimSpace(string(data))
 	if len(token) != 64 {
-		return "", errors.New("invalid UniDrop control token")
+		return "", errors.New("invalid Xendfile control token")
 	}
 	if _, err := hex.DecodeString(token); err != nil {
-		return "", errors.New("invalid UniDrop control token")
+		return "", errors.New("invalid Xendfile control token")
 	}
 	return token, nil
 }
@@ -215,7 +233,7 @@ func responseError(response *http.Response) error {
 	if strings.TrimSpace(payload.Error) != "" {
 		return errors.New(payload.Error)
 	}
-	return fmt.Errorf("UniDrop returned %s", response.Status)
+	return fmt.Errorf("Xendfile returned %s", response.Status)
 }
 
 type trayApp struct {
@@ -320,7 +338,7 @@ func (a *trayApp) dispatch(id int32) {
 	}
 	if err != nil {
 		log.Printf("tray action failed: %v", err)
-		a.notify("UniDrop action failed", err.Error())
+		a.notify("Xendfile action failed", err.Error())
 		return
 	}
 	if id == menuQuit {
@@ -342,7 +360,7 @@ func (a *trayApp) notify(title, message string) {
 	if _, err := exec.LookPath("notify-send"); err != nil {
 		return
 	}
-	_ = exec.Command("notify-send", "--app-name=UniDrop", "--icon=unidrop", title, message).Start()
+	_ = exec.Command("notify-send", "--app-name=Xendfile", "--icon=xendfile", title, message).Start()
 }
 
 func (a *trayApp) snapshot() (coreSummary, uint32) {
@@ -365,9 +383,9 @@ func (a *trayApp) menuProperties(id int32, requested []string) map[string]dbus.V
 		properties["label"] = dbus.MakeVariant(summaryLabel(summary))
 		properties["enabled"] = dbus.MakeVariant(false)
 	case menuOpen:
-		label := "Open UniDrop"
+		label := "Open Xendfile"
 		if summary.Pending > 0 {
-			label = fmt.Sprintf("Open UniDrop — %d waiting", summary.Pending)
+			label = fmt.Sprintf("Open Xendfile — %d waiting", summary.Pending)
 		}
 		properties["label"] = dbus.MakeVariant(label)
 	case menuSeparatorOne, menuSeparatorTwo, menuSeparatorThree:
@@ -381,7 +399,7 @@ func (a *trayApp) menuProperties(id int32, requested []string) map[string]dbus.V
 	case menuDownloads:
 		properties["label"] = dbus.MakeVariant("Open received files")
 	case menuQuit:
-		properties["label"] = dbus.MakeVariant("Quit UniDrop")
+		properties["label"] = dbus.MakeVariant("Quit Xendfile")
 	default:
 		return map[string]dbus.Variant{}
 	}
@@ -457,9 +475,9 @@ func containsID(ids []int32, target int32) bool {
 
 func summaryLabel(summary coreSummary) string {
 	if !summary.Available {
-		return "UniDrop • reconnecting"
+		return "Xendfile • reconnecting"
 	}
-	return fmt.Sprintf("UniDrop • %d nearby • %d waiting", summary.Nearby, summary.Pending)
+	return fmt.Sprintf("Xendfile • %d nearby • %d waiting", summary.Nearby, summary.Pending)
 }
 
 func (a *trayApp) refreshSummary() {
@@ -495,7 +513,7 @@ func (a *trayApp) refreshSummary() {
 	}
 	_ = a.conn.Emit(menuPath, menuInterface+".LayoutUpdated", revision, int32(0))
 	if next.Pending > previous.Pending && next.Pending > 0 {
-		a.notify("Incoming UniDrop request", fmt.Sprintf("%d file request waiting for approval", next.Pending))
+		a.notify("Incoming Xendfile request", fmt.Sprintf("%d file request waiting for approval", next.Pending))
 	}
 }
 
@@ -510,19 +528,19 @@ const (
 
 func statusPresentation(summary coreSummary) (title, detail, status string, state iconState) {
 	if !summary.Available {
-		return "UniDrop", "Secure service is reconnecting", "Active", iconOffline
+		return "Xendfile", "Secure service is reconnecting", "Active", iconOffline
 	}
 	if summary.Pending > 0 {
-		return "UniDrop", fmt.Sprintf("%d incoming request waiting", summary.Pending), "NeedsAttention", iconAttention
+		return "Xendfile", fmt.Sprintf("%d incoming request waiting", summary.Pending), "NeedsAttention", iconAttention
 	}
 	if summary.Nearby > 0 {
-		return "UniDrop", fmt.Sprintf("%d nearby device available", summary.Nearby), "Active", iconNearby
+		return "Xendfile", fmt.Sprintf("%d nearby device available", summary.Nearby), "Active", iconNearby
 	}
 	detail = "Searching automatically for nearby devices"
 	if summary.ReceiveMode == "off" {
 		detail = "Receiving is paused"
 	}
-	return "UniDrop", detail, "Active", iconNormal
+	return "Xendfile", detail, "Active", iconNormal
 }
 
 func makeIconSet(state iconState) []iconPixmap {
@@ -695,8 +713,8 @@ func (a *trayApp) export() error {
 func statusItemPropertyMap(initialPixmaps []iconPixmap) map[string]*prop.Prop {
 	return map[string]*prop.Prop{
 		"Category":            {Value: "ApplicationStatus", Emit: prop.EmitConst},
-		"Id":                  {Value: "unidrop", Emit: prop.EmitConst},
-		"Title":               {Value: "UniDrop", Emit: prop.EmitFalse},
+		"Id":                  {Value: "xendfile", Emit: prop.EmitConst},
+		"Title":               {Value: "Xendfile", Emit: prop.EmitFalse},
 		"Status":              {Value: "Active", Emit: prop.EmitFalse},
 		"WindowId":            {Value: uint32(0), Emit: prop.EmitConst},
 		"IconName":            {Value: "", Emit: prop.EmitConst},
@@ -706,7 +724,7 @@ func statusItemPropertyMap(initialPixmaps []iconPixmap) map[string]*prop.Prop {
 		"AttentionIconName":   {Value: "", Emit: prop.EmitConst},
 		"AttentionIconPixmap": {Value: makeIconSet(iconAttention), Emit: prop.EmitFalse},
 		"AttentionMovieName":  {Value: "", Emit: prop.EmitConst},
-		"ToolTip":             {Value: toolTip{IconPixmap: initialPixmaps, Title: "UniDrop", Text: "Secure service is starting"}, Emit: prop.EmitFalse},
+		"ToolTip":             {Value: toolTip{IconPixmap: initialPixmaps, Title: "Xendfile", Text: "Secure service is starting"}, Emit: prop.EmitFalse},
 		"ItemIsMenu":          {Value: false, Emit: prop.EmitConst},
 		"Menu":                {Value: menuPath, Emit: prop.EmitConst},
 	}
@@ -785,9 +803,9 @@ func run(baseURL string) error {
 	}
 	registered := app.registerWatchers()
 	if registered {
-		log.Printf("UniDrop %s tray registered", appVersion)
+		log.Printf("Xendfile %s tray registered", appVersion)
 	} else {
-		log.Printf("no StatusNotifier host found; UniDrop remains available from the application menu")
+		log.Printf("no StatusNotifier host found; Xendfile remains available from the application menu")
 	}
 	app.refreshSummary()
 
@@ -809,18 +827,18 @@ func run(baseURL string) error {
 			wasRegistered := registered
 			registered = app.registerWatchers()
 			if !wasRegistered && registered {
-				log.Printf("StatusNotifier host appeared; UniDrop tray registered")
+				log.Printf("StatusNotifier host appeared; Xendfile tray registered")
 			}
 		}
 	}
 }
 
 func main() {
-	baseURL := flag.String("ui", defaultUIURL, "UniDrop loopback control-panel URL")
+	baseURL := flag.String("ui", defaultUIURL, "Xendfile loopback control-panel URL")
 	showVersion := flag.Bool("version", false, "show version and exit")
 	flag.Parse()
 	if *showVersion {
-		fmt.Printf("UniDrop Tray %s\n", appVersion)
+		fmt.Printf("Xendfile Tray %s\n", appVersion)
 		return
 	}
 	if err := run(*baseURL); err != nil {

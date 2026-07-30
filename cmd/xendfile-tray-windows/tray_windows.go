@@ -219,7 +219,7 @@ func runTray(baseURL string, openOnStart bool) error {
 	if err != nil {
 		return err
 	}
-	mutexName := utf16Pointer("Local\\UniDropTray")
+	mutexName := utf16Pointer("Local\\XendfileTray")
 	mutex, _, mutexErr := procCreateMutexW.Call(0, 1, uintptr(unsafe.Pointer(mutexName)))
 	if mutex == 0 {
 		return fmt.Errorf("create tray mutex: %w", mutexErr)
@@ -254,7 +254,7 @@ func runTray(baseURL string, openOnStart bool) error {
 	if openOnStart {
 		_ = tray.openPanel()
 	}
-	log.Printf("UniDrop %s Windows notification-area icon registered", appVersion)
+	log.Printf("Xendfile %s Windows notification-area icon registered", appVersion)
 
 	var message windowMessage
 	for {
@@ -275,7 +275,7 @@ func (a *windowsTray) createWindow() error {
 	if instance == 0 {
 		return fmt.Errorf("get application module: %w", instanceErr)
 	}
-	className := utf16Pointer("UniDropTrayWindow")
+	className := utf16Pointer("XendfileTrayWindow")
 	cursor, _, _ := procLoadCursorW.Call(0, 32512)
 	class := windowClassEx{
 		Size:       uint32(unsafe.Sizeof(windowClassEx{})),
@@ -287,7 +287,7 @@ func (a *windowsTray) createWindow() error {
 	if atom, _, registerErr := procRegisterClassExW.Call(uintptr(unsafe.Pointer(&class))); atom == 0 {
 		return fmt.Errorf("register tray window: %w", registerErr)
 	}
-	windowName := utf16Pointer("UniDrop")
+	windowName := utf16Pointer("Xendfile")
 	window, _, createErr := procCreateWindowExW.Call(
 		0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(windowName)), 0,
 		0, 0, 0, 0, 0, 0, instance, 0,
@@ -325,7 +325,7 @@ func windowProc(window uintptr, message uint32, wParam, lParam uintptr) uintptr 
 		switch event {
 		case wmLButtonUp, wmLButtonDbl, ninSelect, ninKeySelect, ninBalloonClick:
 			if err := a.openPanel(); err != nil {
-				a.showBalloon("UniDrop is starting", err.Error())
+				a.showBalloon("Xendfile is starting", err.Error())
 			}
 		case wmRButtonUp, wmContextMenu:
 			a.showMenu()
@@ -440,7 +440,7 @@ func (a *windowsTray) refresh() {
 	a.summary = next
 	a.updateIcon()
 	if next.Available && next.Pending > previous.Pending {
-		a.showBalloon("Incoming UniDrop request", fmt.Sprintf("%d file request%s waiting for approval", next.Pending, pluralSuffix(next.Pending)))
+		a.showBalloon("Incoming Xendfile request", fmt.Sprintf("%d file request%s waiting for approval", next.Pending, pluralSuffix(next.Pending)))
 	}
 }
 
@@ -486,7 +486,7 @@ func (a *windowsTray) showMenu() {
 	appendSeparator(menu)
 	appendMenu(menu, actionFlags, menuDownloads, "Open received files")
 	appendSeparator(menu)
-	appendMenu(menu, mfString, menuQuit, "Quit UniDrop")
+	appendMenu(menu, mfString, menuQuit, "Quit Xendfile")
 
 	var cursor point
 	if result, _, _ := procGetCursorPos.Call(uintptr(unsafe.Pointer(&cursor))); result == 0 {
@@ -520,7 +520,7 @@ func (a *windowsTray) dispatch(command int) {
 	}
 	if err != nil {
 		log.Printf("tray action failed: %v", err)
-		a.showBalloon("UniDrop action failed", err.Error())
+		a.showBalloon("Xendfile action failed", err.Error())
 		return
 	}
 	if command == menuModeAsk || command == menuModeTrusted || command == menuModeOff {
@@ -554,14 +554,14 @@ func startCoreProcess() error {
 	if err != nil {
 		return err
 	}
-	core := filepath.Join(filepath.Dir(executable), "unidrop.exe")
+	core := filepath.Join(filepath.Dir(executable), "xendfile.exe")
 	if info, err := os.Stat(core); err != nil || !info.Mode().IsRegular() {
-		return errors.New("installed UniDrop core was not found")
+		return errors.New("installed Xendfile core was not found")
 	}
 	command := exec.Command(core, "--no-open")
 	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: createNoWindow}
 	if configDir, configErr := os.UserConfigDir(); configErr == nil {
-		logDir := filepath.Join(configDir, "UniDrop")
+		logDir := filepath.Join(configDir, "Xendfile")
 		if os.MkdirAll(logDir, 0700) == nil {
 			if coreLog, logErr := os.OpenFile(filepath.Join(logDir, "core.log"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600); logErr == nil {
 				command.Stdout = coreLog
@@ -581,7 +581,7 @@ func openURL(target string) error {
 	path := utf16Pointer(target)
 	result, _, shellErr := procShellExecuteW.Call(0, uintptr(unsafe.Pointer(operation)), uintptr(unsafe.Pointer(path)), 0, 0, 1)
 	if result <= 32 {
-		return fmt.Errorf("open UniDrop: %w", shellErr)
+		return fmt.Errorf("open Xendfile: %w", shellErr)
 	}
 	return nil
 }
@@ -597,9 +597,9 @@ func appendSeparator(menu uintptr) {
 
 func openLabel(summary coreSummary) string {
 	if summary.Pending > 0 {
-		return fmt.Sprintf("Open UniDrop - %d waiting", summary.Pending)
+		return fmt.Sprintf("Open Xendfile - %d waiting", summary.Pending)
 	}
-	return "Open UniDrop"
+	return "Open Xendfile"
 }
 
 func utf16Pointer(value string) *uint16 {

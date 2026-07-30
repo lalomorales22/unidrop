@@ -2,8 +2,8 @@
 set -eu
 
 APP_ROOT=${APPDIR:-$(CDPATH= cd "$(dirname "$0")" && pwd)}
-CORE="$APP_ROOT/usr/bin/unidrop"
-TRAY="$APP_ROOT/usr/bin/unidrop-tray"
+CORE="$APP_ROOT/usr/bin/xendfile"
+TRAY="$APP_ROOT/usr/bin/xendfile-tray"
 
 case "${1:-}" in
   --version)

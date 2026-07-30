@@ -17,12 +17,13 @@ test("contains one download path for every supported desktop platform", () => {
   assert.equal((html.match(/data-download/g) || []).length, 3);
 });
 
-test("contains product, security, installation, and accessibility essentials", () => {
-  for (const phrase of ["TLS 1.3", "No cloud", "How it works", "Install in minutes", "View source on GitHub", "Release facts", "Client privacy notice"]) {
+test("contains product, security, installation, licensing, and accessibility essentials", () => {
+  for (const phrase of ["Xendfile", "TLS 1.3", "No cloud", "How it works", "Install in minutes", "View source on GitHub", "Release facts", "Client privacy notice", "Apache License 2.0", "provided as-is without warranty"]) {
     assert.ok(html.includes(phrase), `missing ${phrase}`);
   }
   assert.ok(html.includes("prefers-reduced-motion"));
   assert.ok(html.includes("aria-label"));
+  assert.doesNotMatch(html, /UniDrop/);
 });
 
 test("detects platform and architecture while preserving manual choices", () => {
@@ -34,12 +35,14 @@ test("detects platform and architecture while preserving manual choices", () => 
 });
 
 test("labels the unsigned source alpha honestly and links release resources", () => {
-  for (const phrase of ["source-based alpha", "does not yet carry the planned UniDrop publisher signature", "Release notes", "Installation guide", "Source code"]) {
+  for (const phrase of ["source-based alpha", "does not yet carry the planned Xendfile publisher signature", "Release notes", "Installation guide", "Source code"]) {
     assert.ok(html.includes(phrase), `missing ${phrase}`);
   }
   assert.match(html, /docs\/RELEASE_NOTES\.md">Release notes/);
   assert.match(html, /href="#privacy">Client privacy notice/);
   assert.match(html, /blob\/main\/PRIVACY\.md/);
+  assert.match(html, /blob\/main\/LICENSE/);
+  assert.match(html, /blob\/main\/TRADEMARKS\.md/);
 });
 
 test("binds every alpha download to one immutable verified source snapshot", async () => {

@@ -1,6 +1,6 @@
-# UniDrop release procedure
+# Xendfile release procedure
 
-UniDrop releases are fail-closed. A tag must not be created until CI, native
+Xendfile releases are fail-closed. A tag must not be created until CI, native
 packaging, signing/notarization, clean-machine tests, release notes, and the owner
 approval gate are complete for that version.
 
@@ -12,13 +12,13 @@ approval gate are complete for that version.
 3. Generate the Ed25519 release-manifest key offline:
 
    ```sh
-   go run ./cmd/unidrop-release keygen \
-     --private unidrop-release-private.pem \
+   go run ./cmd/xendfile-release keygen \
+     --private xendfile-release-private.pem \
      --public release/release-public.pem
    ```
 
 4. Store the base64-encoded private PEM as the protected
-   `UNIDROP_RELEASE_SIGNING_KEY_B64` Actions secret. Never commit or upload the
+   `XENDFILE_RELEASE_SIGNING_KEY_B64` Actions secret. Never commit or upload the
    private PEM. Keep an offline recovery copy under two-person or owner-approved
    control.
 5. Commit only `release/release-public.pem`, record its SHA-256 fingerprint in the
@@ -48,7 +48,7 @@ approval gate are complete for that version.
    git diff --check
    ```
 
-   On macOS, set `UNIDROP_BUILD_DEVELOPMENT_DMG=1` to also produce and verify the
+   On macOS, set `XENDFILE_BUILD_DEVELOPMENT_DMG=1` to also produce and verify the
    universal development DMG. That artifact is ad-hoc signed for structural CI
    checks only; it is not approved for public distribution.
 
@@ -73,10 +73,10 @@ machine, download `SHA256SUMS`, the versioned manifest and signature, the commit
 release public key, and the target artifact. Verify all hashes, then run:
 
 ```sh
-go run ./cmd/unidrop-release verify \
+go run ./cmd/xendfile-release verify \
   --public release/release-public.pem \
-  --manifest dist/unidrop-VERSION-manifest.json \
-  --signature dist/unidrop-VERSION-manifest.sig.json
+  --manifest dist/xendfile-VERSION-manifest.json \
+  --signature dist/xendfile-VERSION-manifest.sig.json
 gh attestation verify ARTIFACT --repo lalomorales22/unidrop
 ```
 

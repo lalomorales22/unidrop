@@ -1,16 +1,17 @@
-# UniDrop local-client privacy notice
+# Xendfile local-client privacy notice
 
 Last updated: July 30, 2026
 
-This notice describes the current open-source UniDrop alpha client. It does not
+This notice describes the current open-source Xendfile alpha client. It does not
 describe a future hosted account, relay, billing, waitlist, or support service.
 Those services do not exist in the current product.
 
 ## What the client does
 
-UniDrop discovers other UniDrop clients on your private local network and sends
-files directly between devices after pairing and receiver approval. A UniDrop
-server, account, or cloud-storage service is not involved in that transfer.
+Xendfile discovers other Xendfile clients on your private local network and sends
+files directly between devices after pairing and receiver approval. A
+Xendfile-operated server, account, or cloud-storage service is not involved in
+that transfer.
 
 ## Data stored on your computer
 
@@ -20,7 +21,7 @@ manual peer addresses, receive preference, download location, and recent local
 transfer status. Received files are stored in the download location you select
 or your operating system's Downloads folder.
 
-This information remains on the computer where UniDrop is installed. Uninstall
+This information remains on the computer where Xendfile is installed. Uninstall
 preserves device identity and pairing data by default so a reinstall does not
 silently break trust. The uninstaller's explicit remove-user-data option deletes
 that local client state. Received files are never removed by the uninstaller.
@@ -34,11 +35,11 @@ status, and the encrypted transfer stream. People who control your local network
 may observe connection metadata such as IP addresses, ports, timing, and traffic
 volume, but TLS protects file contents in transit.
 
-## Data UniDrop does not collect
+## Data Xendfile does not collect
 
 The current client contains no analytics, advertising, telemetry, crash-report
 upload, cloud file storage, account tracking, or background contact with a
-UniDrop-operated service. The source installer may download an official Go
+Xendfile-operated service. The source installer may download an official Go
 toolchain from `go.dev` when a compatible compiler or bundled binary is absent;
 that request is governed by the Go website's privacy practices.
 

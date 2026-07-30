@@ -42,7 +42,7 @@ func newUpdateFixture(t *testing.T) *updateFixture {
 	}
 	fixture := &updateFixture{
 		t: t, publicKey: publicKey, privateKey: privateKey,
-		artifact: []byte("verified UniDrop update bytes\n"),
+		artifact: []byte("verified Xendfile update bytes\n"),
 	}
 	fixture.server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -50,7 +50,7 @@ func newUpdateFixture(t *testing.T) *updateFixture {
 			_, _ = w.Write(fixture.manifestBytes)
 		case "/manifest.sig.json":
 			_, _ = w.Write(fixture.signatureBytes)
-		case "/unidrop-linux-amd64":
+		case "/xendfile-linux-amd64":
 			if fixture.artifactHandler != nil {
 				fixture.artifactHandler(w, r)
 				return
@@ -69,7 +69,7 @@ func (fixture *updateFixture) resetManifest() {
 	digest := sha256.Sum256(fixture.artifact)
 	fixture.manifest = releaseManifest{
 		SchemaVersion:            1,
-		Product:                  "UniDrop",
+		Product:                  "Xendfile",
 		Version:                  "0.4.0",
 		Tag:                      "v0.4.0",
 		SourceCommit:             strings.Repeat("a", 40),
@@ -79,8 +79,8 @@ func (fixture *updateFixture) resetManifest() {
 		MinimumCompatibleVersion: "0.2.0",
 		RevokedVersions:          []string{},
 		Artifacts: []releaseArtifact{{
-			Name:                     "unidrop-linux-amd64",
-			URL:                      fixture.server.URL + "/unidrop-linux-amd64",
+			Name:                     "xendfile-linux-amd64",
+			URL:                      fixture.server.URL + "/xendfile-linux-amd64",
 			Component:                "core",
 			Platform:                 "linux",
 			Architecture:             "amd64",
@@ -154,7 +154,7 @@ func (fixture *updateFixture) stage(t *testing.T, options updateOptions) (*stage
 func TestSignedUpdateStagesWithoutTouchingWorkingInstallation(t *testing.T) {
 	fixture := newUpdateFixture(t)
 	root := t.TempDir()
-	working := filepath.Join(root, "working-unidrop")
+	working := filepath.Join(root, "working-xendfile")
 	if err := os.WriteFile(working, []byte("current working version\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -243,11 +243,11 @@ func TestUpdateManifestAbuseCasesFailClosed(t *testing.T) {
 			f.resign()
 		},
 		"unsafe artifact name": func(f *updateFixture, _ *updateOptions) {
-			f.manifest.Artifacts[0].Name = "../unidrop"
+			f.manifest.Artifacts[0].Name = "../xendfile"
 			f.resign()
 		},
 		"unapproved URL": func(f *updateFixture, _ *updateOptions) {
-			f.manifest.Artifacts[0].URL = "https://example.com/unidrop-linux-amd64"
+			f.manifest.Artifacts[0].URL = "https://example.com/xendfile-linux-amd64"
 			f.resign()
 		},
 		"wrong filename binding": func(f *updateFixture, _ *updateOptions) {
@@ -607,7 +607,7 @@ func TestUpdatePreferenceRejectsSymlinkAndPublicPermissions(t *testing.T) {
 
 func TestVerifiedReplacementKeepsLastWorkingBackup(t *testing.T) {
 	root := t.TempDir()
-	target := filepath.Join(root, "unidrop")
+	target := filepath.Join(root, "xendfile")
 	staged := filepath.Join(root, "staged-update")
 	journal := filepath.Join(root, "state", "replacement.json")
 	oldBytes := []byte("working release\n")
@@ -638,7 +638,7 @@ func TestVerifiedReplacementKeepsLastWorkingBackup(t *testing.T) {
 
 func TestFailedReplacementHealthCheckRollsBackAndPreservesStableBackup(t *testing.T) {
 	root := t.TempDir()
-	target := filepath.Join(root, "unidrop")
+	target := filepath.Join(root, "xendfile")
 	staged := filepath.Join(root, "staged-update")
 	journal := filepath.Join(root, "state", "replacement.json")
 	oldBytes := []byte("working release\n")
@@ -661,7 +661,7 @@ func TestFailedReplacementHealthCheckRollsBackAndPreservesStableBackup(t *testin
 
 func TestReplacementRejectsChangedStagedArtifactWithoutTouchingInstallation(t *testing.T) {
 	root := t.TempDir()
-	target := filepath.Join(root, "unidrop")
+	target := filepath.Join(root, "xendfile")
 	staged := filepath.Join(root, "staged-update")
 	journal := filepath.Join(root, "state", "replacement.json")
 	oldBytes := []byte("working release\n")
@@ -680,7 +680,7 @@ func TestReplacementRejectsChangedStagedArtifactWithoutTouchingInstallation(t *t
 
 func TestReplacementRejectsHardLinkedStagedAndInstalledPaths(t *testing.T) {
 	root := t.TempDir()
-	target := filepath.Join(root, "unidrop")
+	target := filepath.Join(root, "xendfile")
 	staged := filepath.Join(root, "staged-update")
 	journal := filepath.Join(root, "state", "replacement.json")
 	installedBytes := []byte("working release\n")
@@ -714,8 +714,8 @@ func TestInterruptedReplacementRecoveryIsPhaseAwareAndIdempotent(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.phase, func(t *testing.T) {
 			root := t.TempDir()
-			target := filepath.Join(root, "unidrop")
-			candidate := filepath.Join(root, ".unidrop-candidate-test")
+			target := filepath.Join(root, "xendfile")
+			candidate := filepath.Join(root, ".xendfile-candidate-test")
 			pending := target + ".previous.pending"
 			backup := target + ".last-working"
 			journalPath := filepath.Join(root, "state", "replacement.json")
@@ -757,7 +757,7 @@ func TestInterruptedReplacementRecoveryIsPhaseAwareAndIdempotent(t *testing.T) {
 
 func TestReplacementRecoveryRejectsTamperedStateWithoutTouchingInstalledFile(t *testing.T) {
 	root := t.TempDir()
-	target := filepath.Join(root, "unidrop")
+	target := filepath.Join(root, "xendfile")
 	journalPath := filepath.Join(root, "state", "replacement.json")
 	oldBytes := []byte("working release\n")
 	newBytes := []byte("new release\n")
@@ -779,9 +779,9 @@ func TestReplacementRecoveryRejectsTamperedStateWithoutTouchingInstalledFile(t *
 
 func TestReplacementRecoveryRejectsChangedPendingBackupBeforeRemovingTarget(t *testing.T) {
 	root := t.TempDir()
-	target := filepath.Join(root, "unidrop")
+	target := filepath.Join(root, "xendfile")
 	pending := target + ".previous.pending"
-	candidate := filepath.Join(root, ".unidrop-candidate-test")
+	candidate := filepath.Join(root, ".xendfile-candidate-test")
 	journalPath := filepath.Join(root, "state", "replacement.json")
 	oldBytes := []byte("old release\n")
 	newBytes := []byte("new release\n")
@@ -878,7 +878,7 @@ func assertReplacementStateCleared(t *testing.T, target, journal string) {
 		t.Fatal(err)
 	}
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), ".unidrop-candidate-") {
+		if strings.HasPrefix(entry.Name(), ".xendfile-candidate-") {
 			t.Fatalf("replacement candidate remains: %s", entry.Name())
 		}
 	}

@@ -43,7 +43,7 @@ jobs:
         run: |
           version=$(tr -d '\r\n' < internal/version/VERSION)
           test "$GITHUB_REF_NAME" = "v$version"
-          tools="$RUNNER_TEMP/unidrop-appimage-tools"
+          tools="$RUNNER_TEMP/xendfile-appimage-tools"
           ./scripts/fetch-appimage-tools.sh "$TARGET_ARCH" "$tools"
           appimagetool=$(find "$tools" -maxdepth 1 -type f -name 'appimagetool-*.AppImage' -print -quit)
           runtime=$(find "$tools" -maxdepth 1 -type f -name 'runtime-*' -print -quit)
@@ -51,7 +51,7 @@ jobs:
       - name: Preserve reviewed AppImage for the trusted release job
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: unidrop-appimage-${{ matrix.go_arch }}
+          name: xendfile-appimage-${{ matrix.go_arch }}
           path: dist/*.AppImage
           if-no-files-found: error
           retention-days: 1
@@ -81,13 +81,13 @@ jobs:
       - name: Restore reviewed Linux packages
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: unidrop-appimage-*
+          pattern: xendfile-appimage-*
           path: dist
           merge-multiple: true
       - name: Validate release tag and key configuration
         id: release-version
         env:
-          RELEASE_SIGNING_KEY_B64: ${{ secrets.UNIDROP_RELEASE_SIGNING_KEY_B64 }}
+          RELEASE_SIGNING_KEY_B64: ${{ secrets.XENDFILE_RELEASE_SIGNING_KEY_B64 }}
         shell: bash
         run: |
           version=$(tr -d '\r\n' < internal/version/VERSION)
@@ -98,24 +98,24 @@ jobs:
           printf 'value=%s\n' "$version" >> "$GITHUB_OUTPUT"
       - name: Materialize protected signing key
         env:
-          RELEASE_SIGNING_KEY_B64: ${{ secrets.UNIDROP_RELEASE_SIGNING_KEY_B64 }}
+          RELEASE_SIGNING_KEY_B64: ${{ secrets.XENDFILE_RELEASE_SIGNING_KEY_B64 }}
         run: |
-          node -e 'const fs=require("fs");const p=process.env.RUNNER_TEMP+"/unidrop-release-private.pem";fs.writeFileSync(p,Buffer.from(process.env.RELEASE_SIGNING_KEY_B64,"base64"),{mode:0o600})'
+          node -e 'const fs=require("fs");const p=process.env.RUNNER_TEMP+"/xendfile-release-private.pem";fs.writeFileSync(p,Buffer.from(process.env.RELEASE_SIGNING_KEY_B64,"base64"),{mode:0o600})'
       - name: Build all artifacts and metadata
         run: ./scripts/build-all.sh
       - name: Sign release manifest
         shell: bash
         run: |
           version=$(tr -d '\r\n' < internal/version/VERSION)
-          go run ./cmd/unidrop-release sign \
-            --private "$RUNNER_TEMP/unidrop-release-private.pem" \
-            --manifest "dist/unidrop-$version-manifest.json" \
-            --signature "dist/unidrop-$version-manifest.sig.json"
+          go run ./cmd/xendfile-release sign \
+            --private "$RUNNER_TEMP/xendfile-release-private.pem" \
+            --manifest "dist/xendfile-$version-manifest.json" \
+            --signature "dist/xendfile-$version-manifest.sig.json"
           node scripts/release-metadata.mjs --checksums-only
-          go run ./cmd/unidrop-release verify \
+          go run ./cmd/xendfile-release verify \
             --public release/release-public.pem \
-            --manifest "dist/unidrop-$version-manifest.json" \
-            --signature "dist/unidrop-$version-manifest.sig.json"
+            --manifest "dist/xendfile-$version-manifest.json" \
+            --signature "dist/xendfile-$version-manifest.sig.json"
           node scripts/verify-release.mjs
       - name: Attest build provenance
         uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
@@ -125,8 +125,8 @@ jobs:
         uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
         with:
           subject-checksums: dist/SHA256SUMS
-          sbom-path: dist/unidrop-${{ steps.release-version.outputs.value }}.spdx.json
+          sbom-path: dist/xendfile-${{ steps.release-version.outputs.value }}.spdx.json
       - name: Publish immutable-tag release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes --title "UniDrop $GITHUB_REF_NAME"
+        run: gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes --title "Xendfile $GITHUB_REF_NAME"

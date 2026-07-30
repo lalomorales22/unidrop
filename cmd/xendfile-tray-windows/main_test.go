@@ -10,6 +10,15 @@ import (
 	"testing"
 )
 
+func TestLegacyConfigOverrideRemainsCompatible(t *testing.T) {
+	legacy := filepath.Join(t.TempDir(), "legacy")
+	t.Setenv("XENDFILE_CONFIG_DIR", "")
+	t.Setenv("UNIDROP_CONFIG_DIR", legacy)
+	if got := compatibleConfigDirectory(t.TempDir()); got != legacy {
+		t.Fatalf("config directory = %q, want %q", got, legacy)
+	}
+}
+
 func TestCoreClientRequiresLoopback(t *testing.T) {
 	for _, value := range []string{
 		"https://127.0.0.1:43337/",

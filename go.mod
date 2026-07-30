@@ -1,4 +1,4 @@
-module unidrop
+module xendfile
 
 go 1.25.0
 

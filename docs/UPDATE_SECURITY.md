@@ -1,7 +1,7 @@
 # Signed update metadata design
 
 Automatic update installation is not enabled in the alpha client. The
-dependency-free `cmd/unidrop-update` helper implements signed metadata acceptance,
+dependency-free `cmd/xendfile-update` helper implements signed metadata acceptance,
 non-executable artifact staging, private update preferences, and a crash-safe
 replacement/rollback engine. Native package signature or notarization checks and
 package-specific installer wiring must still be completed before any preference
@@ -15,7 +15,7 @@ compatible client version, publication and expiration timestamps, a signed
 revoked-version list, and a sorted artifact list. Each artifact binds its
 URL, component, platform, architecture, byte size, and SHA-256 digest.
 
-`cmd/unidrop-release` signs the exact manifest bytes with Ed25519. Its detached
+`cmd/xendfile-release` signs the exact manifest bytes with Ed25519. Its detached
 JSON envelope identifies the algorithm and public-key fingerprint and repeats the
 manifest SHA-256. GitHub OIDC/Sigstore attestations provide separate build
 provenance and SBOM evidence; neither replaces the offline-controlled update key.
@@ -63,10 +63,10 @@ complete value. Unknown fields, duplicate fields, invalid values, oversized
 state, symlinks, and group/other-readable POSIX files fail closed.
 
 ```sh
-go run ./cmd/unidrop-update preference get
-go run ./cmd/unidrop-update preference set notify-only
-go run ./cmd/unidrop-update preference set automatic
-go run ./cmd/unidrop-update preference set disabled
+go run ./cmd/xendfile-update preference get
+go run ./cmd/xendfile-update preference set notify-only
+go run ./cmd/xendfile-update preference set automatic
+go run ./cmd/xendfile-update preference set disabled
 ```
 
 Selecting `automatic` records intent only. It does not install, execute, or grant
@@ -92,7 +92,7 @@ native package, the primitive accepts the signed manifest size and SHA-256:
 Recovery verifies the journaled hashes before removing or renaming a managed
 file. It rejects colliding paths, altered candidates, changed pending backups,
 symlinks, public journal permissions on POSIX, unknown phases, and malformed
-state. `unidrop-update recover --journal FILE` provides an idempotent recovery
+state. `xendfile-update recover --journal FILE` provides an idempotent recovery
 entry point for the eventual native installers.
 
 ## Required abuse tests
@@ -113,8 +113,8 @@ the reviewed release public key can exercise the full metadata and
 artifact-verification path:
 
 ```sh
-go run ./cmd/unidrop-update stage \
-  --manifest-url https://github.com/lalomorales22/unidrop/releases/download/vVERSION/unidrop-VERSION-manifest.json \
+go run ./cmd/xendfile-update stage \
+  --manifest-url https://github.com/lalomorales22/unidrop/releases/download/vVERSION/xendfile-VERSION-manifest.json \
   --public-key release/release-public.pem
 ```
 

@@ -1,6 +1,6 @@
-# Contributing to UniDrop
+# Contributing to Xendfile
 
-Thanks for helping make private cross-platform file sharing better. UniDrop is
+Thanks for helping make private cross-platform file sharing better. Xendfile is
 currently alpha software. Security, data preservation, and behavior across macOS,
 Windows, and Linux take priority over feature count.
 

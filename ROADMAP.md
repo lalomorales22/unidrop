@@ -1,6 +1,6 @@
-# UniDrop public roadmap
+# Xendfile public roadmap
 
-UniDrop is **alpha software**. It is useful for direct same-network transfers, but
+Xendfile is **alpha software**. It is useful for direct same-network transfers, but
 its installers are not yet signed or notarized and its protocol has not received
 an independent security review. Do not represent the current release as audited,
 production-ready, or suitable for regulated deployment.

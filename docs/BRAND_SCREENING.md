@@ -1,61 +1,55 @@
-# Preliminary UniDrop brand screening
+# Preliminary Xendfile brand screening
 
 Date checked: 2026-07-30
 
-This is a no-spend engineering screen, not a legal clearance opinion. A qualified
-trademark attorney must run similarity, common-law, state, international, and
-marketplace searches before a major launch, registration, advertising purchase,
-or material brand investment.
+This is a lightweight engineering screen, not a legal clearance opinion or a
+claim of ownership. Search results and domain status can change.
 
-## Material finding
+## Owner decision
 
-The USPTO TSDR record for **UDROP**, US registration 7,058,034 and serial
-88/949,332, reports `LIVE/REGISTRATION/Issued and Active` as of this check. Its
-listed services include SaaS and software for storing, synchronizing,
-transmitting, and sharing files and data over local and global networks. The mark
-is owned by Udrop LLC. This is close in sound, appearance, and product category to
-UniDrop and is a material launch risk requiring attorney review.
+The owner approved **Xendfile** as the new project name and retired **UniDrop**
+as the user-facing brand. The current GitHub repository keeps its existing
+`lalomorales22/unidrop` URL until the owner separately approves a repository
+rename; repository URLs are identifiers, not product branding.
+
+The current open-source alpha will proceed without paid legal review. Before a
+material commercial launch, app-store listing, domain purchase, advertising
+campaign, or trademark filing, the name should be screened again at the level
+appropriate to that investment.
+
+## Xendfile knockout screen
+
+Broad exact-name web searches and GitHub repository search did not identify an
+obvious exact **Xendfile** file-transfer product in this check. The `.com`
+registry RDAP endpoint returned no domain object for `xendfile.com`; that does
+not reserve the domain or guarantee that a registrar can sell it.
+
+**X-Sendfile** is a longstanding, similarly pronounced HTTP-server feature and
+header convention. It is not the exact Xendfile name, but it creates a search,
+pronunciation, and technical-association risk worth retaining in the record.
+
+Useful sources:
+
+- USPTO trademark search entry point:
+  <https://www.uspto.gov/trademarks/search>
+- `.com` registry lookup:
+  <https://rdap.verisign.com/com/v1/domain/XENDFILE.COM>
+- X-Sendfile background:
+  <https://tn123.org/mod_xsendfile/>
+
+## Why the former name was retired
+
+The earlier screen found **UDROP**, US registration 7,058,034 and serial
+88/949,332, reported live for software and SaaS involving storing,
+synchronizing, transmitting, and sharing files and data. That overlap made the
+former UniDrop name an avoidable launch risk.
 
 Official record:
 <https://tsdr.uspto.gov/#caseNumber=88949332&caseSearchType=US_APPLICATION&caseType=DEFAULT&searchType=statusSearch>
 
-Other exact/near-exact federal records found in the preliminary search:
+## Current rule
 
-- **UNIDROP**, serial 97/251,164, for spice racks is reported abandoned as of
-  September 25, 2023.
-- **UNI-DROP**, registration 2,037,859, covers industrial heat-treat furnaces and
-  is reported registered/renewed. It is commercially more distant but should
-  remain in counsel's full search.
-
-Official records:
-<https://tsdr.uspto.gov/#caseNumber=97251164&caseSearchType=US_APPLICATION&caseType=DEFAULT&searchType=statusSearch>
-and
-<https://tsdr.uspto.gov/#caseNumber=74693948&caseSearchType=US_APPLICATION&caseType=DEFAULT&searchType=statusSearch>.
-
-## Domain screen
-
-Registry RDAP was queried on the same date:
-
-| Domain | Preliminary result |
-| --- | --- |
-| `unidrop.com` | Registered; registry record returned an active object |
-| `unidrop.app` | Registered; registry record returned an active object |
-| `getunidrop.com` | No registry RDAP object returned |
-| `unidrop.dev` | No registry RDAP object returned |
-| `unidrop.io` | Registry lookup was inconclusive and must be retried |
-
-RDAP sources:
-<https://rdap.verisign.com/com/v1/domain/unidrop.com>,
-<https://rdap.verisign.com/com/v1/domain/getunidrop.com>,
-<https://pubapi.registry.google/rdap/domain/unidrop.app>, and
-<https://pubapi.registry.google/rdap/domain/unidrop.dev>.
-
-`NOT FOUND` in RDAP is not a reservation or purchase guarantee. Recheck through
-the selected registrar immediately before any approved purchase, and do not buy
-domains merely to work around a mark that counsel considers conflicting.
-
-## Gate
-
-Do not spend materially on the UniDrop name, logo, domains, advertising, app-store
-identity, publisher certificates, or trademark filing until the owner and counsel
-decide whether the UDROP registration requires a rename or coexistence strategy.
+Use **Xendfile** in product names, binaries, installers, packages, screenshots,
+and user-facing text. Preserve the former identifiers only where explicitly
+documented as protocol or migration compatibility. Do not imply that the
+preliminary screen proves trademark availability or registration rights.

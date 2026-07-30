@@ -1,4 +1,4 @@
-// UniDrop update verifies and stages signed release artifacts and provides the
+// Xendfile update verifies and stages signed release artifacts and provides the
 // fail-closed preference and replacement primitives used by native installers.
 // It intentionally uses only the Go standard library.
 package main
@@ -27,7 +27,7 @@ import (
 	"strings"
 	"time"
 
-	appversion "unidrop/internal/version"
+	appversion "xendfile/internal/version"
 )
 
 const (
@@ -130,7 +130,7 @@ type stageResult struct {
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "unidrop-update:", err)
+		fmt.Fprintln(os.Stderr, "xendfile-update:", err)
 		os.Exit(1)
 	}
 }
@@ -189,10 +189,10 @@ func runStage(args []string) error {
 			return errors.New("resolve per-user update directories")
 		}
 		if *stagingDir == "" {
-			*stagingDir = filepath.Join(cache, "UniDrop", "updates")
+			*stagingDir = filepath.Join(cache, "Xendfile", "updates")
 		}
 		if *statePath == "" {
-			*statePath = filepath.Join(config, "UniDrop", "update-state.json")
+			*statePath = filepath.Join(config, "Xendfile", "update-state.json")
 		}
 	}
 	highest, err := readHighestAccepted(*statePath)
@@ -220,7 +220,7 @@ func runStage(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("UniDrop %s verified and staged at %s\n", result.Version, result.Path)
+	fmt.Printf("Xendfile %s verified and staged at %s\n", result.Version, result.Path)
 	return nil
 }
 
@@ -394,7 +394,7 @@ func verifyUpdate(manifestBytes, signatureBytes []byte, trustedKeys map[string]e
 }
 
 func validateManifest(manifest *releaseManifest, options updateOptions) error {
-	if manifest.SchemaVersion != 1 || manifest.Product != "UniDrop" {
+	if manifest.SchemaVersion != 1 || manifest.Product != "Xendfile" {
 		return errors.New("unsupported release manifest")
 	}
 	if _, err := parseVersion(manifest.Version); err != nil {
@@ -495,7 +495,7 @@ func fetchLimited(ctx context.Context, client *http.Client, rawURL string, limit
 	if err != nil {
 		return nil, err
 	}
-	request.Header.Set("User-Agent", "UniDrop-Update/"+appversion.Current)
+	request.Header.Set("User-Agent", "Xendfile-Update/"+appversion.Current)
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, err
@@ -528,7 +528,7 @@ func downloadArtifact(ctx context.Context, client *http.Client, artifact *releas
 	if err != nil {
 		return "", err
 	}
-	request.Header.Set("User-Agent", "UniDrop-Update/"+appversion.Current)
+	request.Header.Set("User-Agent", "Xendfile-Update/"+appversion.Current)
 	response, err := client.Do(request)
 	if err != nil {
 		return "", fmt.Errorf("download update: %w", err)
@@ -540,7 +540,7 @@ func downloadArtifact(ctx context.Context, client *http.Client, artifact *releas
 	if response.ContentLength >= 0 && response.ContentLength != artifact.Size {
 		return "", errors.New("download size does not match signed metadata")
 	}
-	file, err := os.CreateTemp(stagingDir, ".unidrop-update-*")
+	file, err := os.CreateTemp(stagingDir, ".xendfile-update-*")
 	if err != nil {
 		return "", fmt.Errorf("create non-executable staging file: %w", err)
 	}
@@ -821,7 +821,7 @@ func defaultPreferencePath() (string, error) {
 	if err != nil {
 		return "", errors.New("resolve per-user update preference directory")
 	}
-	return filepath.Join(config, "UniDrop", "update-preference.json"), nil
+	return filepath.Join(config, "Xendfile", "update-preference.json"), nil
 }
 
 func validUpdatePreference(mode string) bool {
@@ -1145,7 +1145,7 @@ func replaceVerifiedArtifact(stagedPath, targetPath, journalPath string, expecte
 			return "", err
 		}
 	}
-	candidateFile, err := os.CreateTemp(targetDirectory, ".unidrop-candidate-*")
+	candidateFile, err := os.CreateTemp(targetDirectory, ".xendfile-candidate-*")
 	if err != nil {
 		return "", fmt.Errorf("create replacement candidate: %w", err)
 	}
@@ -1292,7 +1292,7 @@ func validateReplacementJournal(journal *replacementJournal, journalPath string)
 	if filepath.Dir(journal.CandidatePath) != targetDirectory || filepath.Dir(journal.PendingBackupPath) != targetDirectory || filepath.Dir(journal.BackupPath) != targetDirectory {
 		return errors.New("replacement files must share the installed file directory")
 	}
-	if journal.PendingBackupPath != journal.TargetPath+".previous.pending" || journal.BackupPath != journal.TargetPath+".last-working" || !strings.HasPrefix(filepath.Base(journal.CandidatePath), ".unidrop-candidate-") {
+	if journal.PendingBackupPath != journal.TargetPath+".previous.pending" || journal.BackupPath != journal.TargetPath+".last-working" || !strings.HasPrefix(filepath.Base(journal.CandidatePath), ".xendfile-candidate-") {
 		return errors.New("replacement journal contains unexpected internal paths")
 	}
 	absoluteJournal, err := filepath.Abs(journalPath)

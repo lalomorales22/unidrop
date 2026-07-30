@@ -1,4 +1,4 @@
-# UniDrop per-user installer for Windows 10/11.
+# Xendfile per-user installer for Windows 10/11.
 [CmdletBinding()]
 param(
     [switch]$NoStart,
@@ -10,12 +10,12 @@ $GoVersion = '1.26.5'
 $MinimumGoVersion = [version]'1.25.0'
 $ScriptDirectory = $PSScriptRoot
 $AppVersion = (Get-Content (Join-Path $ScriptDirectory 'internal\version\VERSION') -Raw).Trim()
-$TempDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("unidrop-install-" + [guid]::NewGuid().ToString('N'))
+$TempDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("xendfile-install-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $TempDirectory | Out-Null
 
-function Write-UniDrop([string]$Message) { Write-Host "UniDrop: $Message" }
+function Write-Xendfile([string]$Message) { Write-Host "Xendfile: $Message" }
 
-function Get-UniDropGo {
+function Get-XendfileGo {
     if ($script:GoExecutable) { return $script:GoExecutable }
     $GoCommand = Get-Command go -ErrorAction SilentlyContinue
     if ($GoCommand) {
@@ -24,7 +24,7 @@ function Get-UniDropGo {
             if ($InstalledGoVersionText.StartsWith('go')) { $InstalledGoVersionText = $InstalledGoVersionText.Substring(2) }
             $InstalledGoVersion = [version]$InstalledGoVersionText
             if ($InstalledGoVersion -lt $MinimumGoVersion) {
-                Write-UniDrop "the installed Go compiler is older than $MinimumGoVersion; using the verified current toolchain"
+                Write-Xendfile "the installed Go compiler is older than $MinimumGoVersion; using the verified current toolchain"
                 $GoCommand = $null
             }
         } catch {
@@ -33,12 +33,12 @@ function Get-UniDropGo {
     }
     if ($GoCommand) {
         $script:GoExecutable = $GoCommand.Source
-        Write-UniDrop 'building with the installed Go compiler'
+        Write-Xendfile 'building with the installed Go compiler'
         return $script:GoExecutable
     }
     $ArchiveName = "go$GoVersion.windows-$TargetArch.zip"
     $ArchivePath = Join-Path $TempDirectory $ArchiveName
-    Write-UniDrop "fetching the official Go $GoVersion toolchain from go.dev"
+    Write-Xendfile "fetching the official Go $GoVersion toolchain from go.dev"
     Invoke-WebRequest -UseBasicParsing -Uri "https://go.dev/dl/$ArchiveName" -OutFile $ArchivePath
     $ActualHash = (Get-FileHash -Algorithm SHA256 $ArchivePath).Hash.ToLowerInvariant()
     if ($ActualHash -ne $ExpectedHash) { throw "SHA-256 verification failed for $ArchiveName" }
@@ -60,10 +60,10 @@ function Install-BundledBinary([string]$Bundled, [string]$Destination) {
     Copy-Item -Force $Bundled $Destination
 }
 
-function Build-UniDropBinary([string]$Package, [string]$Destination, [switch]$WindowsGUI) {
-    $GoExecutable = Get-UniDropGo
+function Build-XendfileBinary([string]$Package, [string]$Destination, [switch]$WindowsGUI) {
+    $GoExecutable = Get-XendfileGo
     if (-not (Test-Path (Join-Path $ScriptDirectory 'go.mod')) -or -not (Test-Path (Join-Path $ScriptDirectory 'vendor'))) {
-        throw 'Vendored UniDrop source or a bundled binary is required'
+        throw 'Vendored Xendfile source or a bundled binary is required'
     }
     $OldCgo = $env:CGO_ENABLED
     $OldGoos = $env:GOOS
@@ -97,89 +97,109 @@ try {
         $InstallDirectory = Join-Path $InstallRoot 'App'
         $StartupDirectory = Join-Path $InstallRoot 'Startup'
         $ProgramsDirectory = Join-Path $InstallRoot 'Programs'
+        $LegacyInstallDirectory = $null
         New-Item -ItemType Directory -Force -Path $StartupDirectory, $ProgramsDirectory | Out-Null
     } else {
-        $InstallDirectory = Join-Path $env:LOCALAPPDATA 'UniDrop'
+        $InstallDirectory = Join-Path $env:LOCALAPPDATA 'Xendfile'
+        $LegacyInstallDirectory = Join-Path $env:LOCALAPPDATA 'UniDrop'
         $StartupDirectory = [Environment]::GetFolderPath('Startup')
         $ProgramsDirectory = [Environment]::GetFolderPath('Programs')
     }
-    $Destination = Join-Path $InstallDirectory 'unidrop.exe'
-    $TrayDestination = Join-Path $InstallDirectory 'unidrop-tray.exe'
+    $Destination = Join-Path $InstallDirectory 'xendfile.exe'
+    $TrayDestination = Join-Path $InstallDirectory 'xendfile-tray.exe'
     New-Item -ItemType Directory -Force -Path $InstallDirectory | Out-Null
-    $Bundled = Join-Path $ScriptDirectory "dist\unidrop-windows-$TargetArch.exe"
-    $BundledTray = Join-Path $ScriptDirectory "dist\unidrop-tray-windows-$TargetArch.exe"
+    $Bundled = Join-Path $ScriptDirectory "dist\xendfile-windows-$TargetArch.exe"
+    $BundledTray = Join-Path $ScriptDirectory "dist\xendfile-tray-windows-$TargetArch.exe"
 
     # Stop this user's existing processes so an upgrade can replace both executables.
     if (-not $IsIsolatedInstall) {
-        Get-Process unidrop, unidrop-tray -ErrorAction SilentlyContinue | Stop-Process -Force
+        Get-Process xendfile, xendfile-tray, unidrop, unidrop-tray -ErrorAction SilentlyContinue | Stop-Process -Force
     }
 
     if (Test-Path $Bundled) {
-        Write-UniDrop "using bundled Windows/$TargetArch core"
+        Write-Xendfile "using bundled Windows/$TargetArch core"
         Install-BundledBinary $Bundled $Destination
     } else {
-        Write-UniDrop "building UniDrop $AppVersion (standard library only)"
-        Build-UniDropBinary '.' $Destination
+        Write-Xendfile "building Xendfile $AppVersion (standard library only)"
+        Build-XendfileBinary '.' $Destination
     }
     if (Test-Path $BundledTray) {
-        Write-UniDrop "using bundled Windows/$TargetArch notification-area companion"
+        Write-Xendfile "using bundled Windows/$TargetArch notification-area companion"
         Install-BundledBinary $BundledTray $TrayDestination
     } else {
-        Write-UniDrop 'building the native Windows notification-area companion'
-        Build-UniDropBinary './cmd/unidrop-tray-windows' $TrayDestination -WindowsGUI
+        Write-Xendfile 'building the native Windows notification-area companion'
+        Build-XendfileBinary './cmd/xendfile-tray-windows' $TrayDestination -WindowsGUI
     }
 
-    # Keep the installed binary console-capable so `unidrop send` and
-    # `unidrop peers` behave normally in PowerShell. The separate tray binary
+    # Keep the installed binary console-capable so `xendfile send` and
+    # `xendfile peers` behave normally in PowerShell. The separate tray binary
     # uses the Windows GUI subsystem, so startup never flashes a console.
-    $BackgroundLauncher = Join-Path $InstallDirectory 'unidrop-background.vbs'
-    $OpenLauncher = Join-Path $InstallDirectory 'unidrop-open.vbs'
+    $BackgroundLauncher = Join-Path $InstallDirectory 'xendfile-background.vbs'
+    $OpenLauncher = Join-Path $InstallDirectory 'xendfile-open.vbs'
     Remove-Item $BackgroundLauncher, $OpenLauncher -Force -ErrorAction SilentlyContinue
 
     if (-not $IsIsolatedInstall) {
         $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-        $PathParts = @($UserPath -split ';' | Where-Object { $_ })
-        if (-not ($PathParts | Where-Object { $_.TrimEnd('\') -ieq $InstallDirectory.TrimEnd('\') })) {
-            $NewUserPath = if ($UserPath) { "$UserPath;$InstallDirectory" } else { $InstallDirectory }
-            [Environment]::SetEnvironmentVariable('Path', $NewUserPath, 'User')
+        $PathParts = @($UserPath -split ';' | Where-Object {
+            $_ -and $_.TrimEnd('\') -ine $LegacyInstallDirectory.TrimEnd('\')
+        })
+        $HadXendfilePath = [bool]($PathParts | Where-Object { $_.TrimEnd('\') -ieq $InstallDirectory.TrimEnd('\') })
+        if (-not $HadXendfilePath) { $PathParts += $InstallDirectory }
+        [Environment]::SetEnvironmentVariable('Path', ($PathParts -join ';'), 'User')
+        if (-not $HadXendfilePath) {
             $env:Path = "$env:Path;$InstallDirectory"
-            Write-UniDrop 'added the UniDrop command to your user PATH (new terminals will see it)'
+            Write-Xendfile 'added the Xendfile command to your user PATH (new terminals will see it)'
         }
     }
 
     $Shell = New-Object -ComObject WScript.Shell
-    $StartupShortcut = $Shell.CreateShortcut((Join-Path $StartupDirectory 'UniDrop.lnk'))
+    $StartupShortcut = $Shell.CreateShortcut((Join-Path $StartupDirectory 'Xendfile.lnk'))
     $StartupShortcut.TargetPath = $TrayDestination
     $StartupShortcut.Arguments = ''
     $StartupShortcut.WorkingDirectory = $InstallDirectory
-    $StartupShortcut.Description = 'UniDrop secure local file sharing'
+    $StartupShortcut.Description = 'Xendfile secure local file sharing'
     $StartupShortcut.Save()
 
-    $MenuShortcut = $Shell.CreateShortcut((Join-Path $ProgramsDirectory 'UniDrop.lnk'))
+    $MenuShortcut = $Shell.CreateShortcut((Join-Path $ProgramsDirectory 'Xendfile.lnk'))
     $MenuShortcut.TargetPath = $TrayDestination
     $MenuShortcut.Arguments = '--open'
     $MenuShortcut.WorkingDirectory = $InstallDirectory
-    $MenuShortcut.Description = 'Open UniDrop'
+    $MenuShortcut.Description = 'Open Xendfile'
     $MenuShortcut.Save()
 
     Copy-Item -Force (Join-Path $ScriptDirectory 'uninstall.ps1') (Join-Path $InstallDirectory 'uninstall.ps1')
-    $UninstallShortcut = $Shell.CreateShortcut((Join-Path $ProgramsDirectory 'Uninstall UniDrop.lnk'))
+    Copy-Item -Force (Join-Path $ScriptDirectory 'LICENSE') (Join-Path $InstallDirectory 'LICENSE')
+    Copy-Item -Force (Join-Path $ScriptDirectory 'NOTICE') (Join-Path $InstallDirectory 'NOTICE')
+    Copy-Item -Force (Join-Path $ScriptDirectory 'THIRD_PARTY_NOTICES.md') (Join-Path $InstallDirectory 'THIRD_PARTY_NOTICES.md')
+    $UninstallShortcut = $Shell.CreateShortcut((Join-Path $ProgramsDirectory 'Uninstall Xendfile.lnk'))
     $UninstallShortcut.TargetPath = 'powershell.exe'
     $UninstallShortcut.Arguments = '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $InstallDirectory 'uninstall.ps1') + '"'
     if ($IsIsolatedInstall) { $UninstallShortcut.Arguments += ' -InstallRoot "' + $InstallRoot + '"' }
     $UninstallShortcut.WorkingDirectory = $InstallDirectory
-    $UninstallShortcut.Description = 'Uninstall UniDrop while preserving paired-device data'
+    $UninstallShortcut.Description = 'Uninstall Xendfile while preserving paired-device data'
     $UninstallShortcut.Save()
 
-    Write-UniDrop "installed $Destination and $TrayDestination"
+    if (-not $IsIsolatedInstall) {
+        $LegacyShortcuts = @(
+            (Join-Path $StartupDirectory 'UniDrop.lnk')
+            (Join-Path $ProgramsDirectory 'UniDrop.lnk')
+            (Join-Path $ProgramsDirectory 'Uninstall UniDrop.lnk')
+        )
+        Remove-Item -LiteralPath $LegacyShortcuts -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $LegacyInstallDirectory) {
+            Remove-Item -LiteralPath $LegacyInstallDirectory -Recurse -Force
+        }
+    }
+
+    Write-Xendfile "installed $Destination and $TrayDestination"
     if (-not $NoStart) {
         Start-Process -FilePath $TrayDestination -WorkingDirectory $InstallDirectory
-        Write-UniDrop 'UniDrop is running in the Windows notification area. Click its icon or open it from Start.'
+        Write-Xendfile 'Xendfile is running in the Windows notification area. Click its icon or open it from Start.'
     } else {
-        Write-UniDrop 'startup shortcuts installed; automatic start was skipped'
+        Write-Xendfile 'startup shortcuts installed; automatic start was skipped'
     }
-    Write-UniDrop 'Windows may ask once for permission to communicate on private networks.'
-    Write-UniDrop 'From a new PowerShell window, try: unidrop peers'
+    Write-Xendfile 'Windows may ask once for permission to communicate on private networks.'
+    Write-Xendfile 'From a new PowerShell window, try: xendfile peers'
 } finally {
     if (Test-Path $TempDirectory) { Remove-Item -Recurse -Force $TempDirectory }
 }
