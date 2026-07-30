@@ -3,7 +3,7 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
 DIST_DIR="$SCRIPT_DIR/dist"
-VERSION=${UNIDROP_VERSION:-0.3.0}
+VERSION=${UNIDROP_VERSION:-0.3.1}
 
 command -v go >/dev/null 2>&1 || { printf '%s\n' 'Go is required to build release binaries.' >&2; exit 1; }
 mkdir -p "$DIST_DIR"
@@ -15,13 +15,23 @@ build() {
   output="$DIST_DIR/unidrop-$target_os-$target_arch$suffix"
   printf 'Building %s/%s...\n' "$target_os" "$target_arch"
   (cd "$SCRIPT_DIR" && CGO_ENABLED=0 GOOS="$target_os" GOARCH="$target_arch" go build \
-    -trimpath -ldflags="-s -w -X main.appVersion=$VERSION" -o "$output" .)
+    -mod=vendor -trimpath -ldflags="-s -w -X main.appVersion=$VERSION" -o "$output" .)
+}
+
+build_tray() {
+  target_arch=$1
+  output="$DIST_DIR/unidrop-tray-linux-$target_arch"
+  printf 'Building Linux tray/%s...\n' "$target_arch"
+  (cd "$SCRIPT_DIR" && CGO_ENABLED=0 GOOS=linux GOARCH="$target_arch" go build \
+    -mod=vendor -trimpath -ldflags="-s -w -X main.appVersion=$VERSION" -o "$output" ./cmd/unidrop-tray)
 }
 
 build darwin amd64 ''
 build darwin arm64 ''
 build linux amd64 ''
 build linux arm64 ''
+build_tray amd64
+build_tray arm64
 build windows amd64 '.exe'
 build windows arm64 '.exe'
 

@@ -38,7 +38,7 @@ import (
 	"time"
 )
 
-var appVersion = "0.3.0"
+var appVersion = "0.3.1"
 
 const (
 	protocolVersion  = 2
@@ -181,6 +181,8 @@ type App struct {
 	uiServer     *http.Server
 	publicListen net.Listener
 	uiListen     net.Listener
+	shutdown     chan struct{}
+	shutdownOnce sync.Once
 }
 
 type pairRequest struct {
@@ -206,6 +208,8 @@ func main() {
 			os.Exit(runSendCLI(os.Args[2:]))
 		case "peers":
 			os.Exit(runPeersCLI())
+		case "stop":
+			os.Exit(runStopCLI())
 		}
 	}
 	listenAddress := flag.String("listen", fmt.Sprintf(":%d", defaultPeerPort), "LAN HTTPS listen address")
@@ -222,13 +226,15 @@ func main() {
 	}
 	uiURL := "http://" + *uiAddress + "/"
 	if *openOnly {
-		if !probeUI(uiURL) {
-			log.Fatal("UniDrop is not running")
+		if !probeUI(uiURL) && startManagedServices() {
+			waitForUI(uiURL, 5*time.Second)
 		}
-		if err := openTarget(uiURL); err != nil {
-			log.Fatal(err)
+		if probeUI(uiURL) {
+			if err := openTarget(uiURL); err != nil {
+				log.Fatal(err)
+			}
+			return
 		}
-		return
 	}
 
 	app, err := newApp(*uiAddress)
@@ -254,6 +260,9 @@ func main() {
 		}()
 	}
 	go app.runDiscovery(ctx)
+	if *openOnly && runtime.GOOS == "linux" {
+		startLinuxTray(uiURL)
+	}
 	if !*noOpen {
 		go func() {
 			time.Sleep(350 * time.Millisecond)
@@ -261,7 +270,10 @@ func main() {
 		}()
 	}
 	log.Printf("UniDrop %s ready: %s (secure peer port %d)", appVersion, uiURL, app.peerPort)
-	<-ctx.Done()
+	select {
+	case <-ctx.Done():
+	case <-app.shutdown:
+	}
 	shutdown, stop := context.WithTimeout(context.Background(), 4*time.Second)
 	defer stop()
 	_ = app.uiServer.Shutdown(shutdown)
@@ -352,6 +364,81 @@ func runPeersCLI() int {
 		fmt.Println("No UniDrop devices are currently visible.")
 	}
 	return 0
+}
+
+func runStopCLI() int {
+	if stopManagedServices() {
+		fmt.Println("UniDrop: stopped the background service and desktop shell.")
+		return 0
+	}
+	response, err := localControlRequest(context.Background(), http.MethodPost, "/api/cli/shutdown", nil)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "UniDrop:", err)
+		return 1
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		fmt.Fprintln(os.Stderr, "UniDrop:", responseError(response))
+		return 1
+	}
+	if runtime.GOOS == "linux" {
+		_ = exec.Command("pkill", "-TERM", "-x", "unidrop-tray").Run()
+	}
+	fmt.Println("UniDrop: stopped the background service and desktop shell.")
+	return 0
+}
+
+func stopManagedServices() bool {
+	switch runtime.GOOS {
+	case "darwin":
+		return exec.Command("launchctl", "bootout", fmt.Sprintf("gui/%d/com.unidrop.app", os.Getuid())).Run() == nil
+	case "linux":
+		return exec.Command("systemctl", "--user", "stop", "unidrop-tray.service", "unidrop.service").Run() == nil
+	default:
+		return false
+	}
+}
+
+func startManagedServices() bool {
+	switch runtime.GOOS {
+	case "darwin":
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return false
+		}
+		plist := filepath.Join(home, "Library", "LaunchAgents", "com.unidrop.app.plist")
+		return exec.Command("launchctl", "bootstrap", fmt.Sprintf("gui/%d", os.Getuid()), plist).Run() == nil
+	case "linux":
+		return exec.Command("systemctl", "--user", "start", "unidrop.service", "unidrop-tray.service").Run() == nil
+	default:
+		return false
+	}
+}
+
+func waitForUI(uiURL string, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if probeUI(uiURL) {
+			return true
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return false
+}
+
+func startLinuxTray(uiURL string) {
+	if exec.Command("pgrep", "-x", "unidrop-tray").Run() == nil {
+		return
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return
+	}
+	tray := filepath.Join(filepath.Dir(executable), "unidrop-tray")
+	if info, err := os.Stat(tray); err != nil || !info.Mode().IsRegular() || info.Mode()&0111 == 0 {
+		return
+	}
+	_ = exec.Command(tray, "--ui", uiURL).Start()
 }
 
 func parseSendArguments(args []string) (string, []string, error) {
@@ -446,6 +533,7 @@ func newApp(uiAddress string) (*App, error) {
 		uiAddress:   uiAddress,
 		maxBytes:    defaultMaxBytes,
 		discovery:   "starting",
+		shutdown:    make(chan struct{}),
 	}
 	if override := strings.TrimSpace(os.Getenv("UNIDROP_DOWNLOAD_DIR")); override != "" {
 		a.downloadDir = override
@@ -731,6 +819,9 @@ func (a *App) localMux() http.Handler {
 	mux.HandleFunc("/api/receive-mode", a.requireLocalWrite(a.handleReceiveMode))
 	mux.HandleFunc("/api/cli/send", a.requireLocalControl(a.handleCLISend))
 	mux.HandleFunc("/api/cli/peers", a.requireLocalControl(a.handlePeers))
+	mux.HandleFunc("/api/cli/receive-mode", a.requireLocalControlWrite(a.handleReceiveMode))
+	mux.HandleFunc("/api/cli/open-downloads", a.requireLocalControlWrite(a.handleOpenDownloads))
+	mux.HandleFunc("/api/cli/shutdown", a.requireLocalControlWrite(a.handleShutdown))
 	return securityHeaders(mux, true)
 }
 
@@ -786,6 +877,17 @@ func (a *App) requireLocalControl(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		next(w, r)
+	}
+}
+
+func (a *App) requireLocalControlWrite(next http.HandlerFunc) http.HandlerFunc {
+	authorized := a.requireLocalControl(next)
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		authorized(w, r)
 	}
 }
 
@@ -1111,6 +1213,11 @@ func (a *App) handleOpenDownloads(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (a *App) handleShutdown(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	a.shutdownOnce.Do(func() { close(a.shutdown) })
 }
 
 func (a *App) handleAddPeer(w http.ResponseWriter, r *http.Request) {

@@ -3,8 +3,9 @@
 # It installs per-user, needs no sudo, and never downloads third-party modules.
 set -eu
 
-APP_VERSION="0.3.0"
+APP_VERSION="0.3.1"
 GO_VERSION="1.26.5"
+MIN_GO_VERSION="1.25.0"
 SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
 TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/unidrop-install.XXXXXX")
 INSTALL_HOME=${UNIDROP_INSTALL_HOME:-$HOME}
@@ -83,6 +84,44 @@ toolchain_hash() {
   esac
 }
 
+go_is_compatible() {
+  candidate=$1
+  version=$("$candidate" env GOVERSION 2>/dev/null || :)
+  version=${version#go}
+  [ -n "$version" ] || return 1
+  awk -v have="$version" -v need="$MIN_GO_VERSION" 'BEGIN {
+    split(have, h, "."); split(need, n, ".")
+    for (i = 1; i <= 3; i++) {
+      hv = h[i] + 0; nv = n[i] + 0
+      if (hv > nv) exit 0
+      if (hv < nv) exit 1
+    }
+    exit 0
+  }'
+}
+
+prepare_go() {
+  if [ -n "${GO_CMD:-}" ] && go_is_compatible "$GO_CMD"; then
+    return
+  fi
+  if command -v go >/dev/null 2>&1 && go_is_compatible "$(command -v go)"; then
+    GO_CMD=$(command -v go)
+    say "building with the installed Go compiler"
+    return
+  fi
+  if command -v go >/dev/null 2>&1; then
+    say "the installed Go compiler is older than $MIN_GO_VERSION; using the verified current toolchain"
+  fi
+  command -v curl >/dev/null 2>&1 || fail "curl is required to fetch the verified Go compiler"
+  archive="go$GO_VERSION.$TARGET_OS-$TARGET_ARCH.tar.gz"
+  archive_path="$TEMP_DIR/$archive"
+  say "fetching the official Go $GO_VERSION toolchain from go.dev"
+  curl -fL --retry 3 --proto '=https' --tlsv1.2 -o "$archive_path" "https://go.dev/dl/$archive"
+  verify_sha256 "$(toolchain_hash)" "$archive_path"
+  tar -xzf "$archive_path" -C "$TEMP_DIR"
+  GO_CMD="$TEMP_DIR/go/bin/go"
+}
+
 build_binary() {
   output=$1
   bundled="$SCRIPT_DIR/dist/unidrop-$TARGET_OS-$TARGET_ARCH"
@@ -101,24 +140,24 @@ build_binary() {
 
   [ -f "$SCRIPT_DIR/go.mod" ] && [ -f "$SCRIPT_DIR/main.go" ] || \
     fail "source files or a bundled binary are required"
+  [ -d "$SCRIPT_DIR/vendor" ] || fail "vendored module source is required for an offline build"
 
-  if command -v go >/dev/null 2>&1; then
-    GO_CMD=$(command -v go)
-    say "building with the installed Go compiler"
-  else
-    command -v curl >/dev/null 2>&1 || fail "curl is required to fetch the verified Go compiler"
-    archive="go$GO_VERSION.$TARGET_OS-$TARGET_ARCH.tar.gz"
-    archive_path="$TEMP_DIR/$archive"
-    say "fetching the official Go $GO_VERSION toolchain from go.dev"
-    curl -fL --retry 3 --proto '=https' --tlsv1.2 -o "$archive_path" "https://go.dev/dl/$archive"
-    verify_sha256 "$(toolchain_hash)" "$archive_path"
-    tar -xzf "$archive_path" -C "$TEMP_DIR"
-    GO_CMD="$TEMP_DIR/go/bin/go"
-  fi
+  prepare_go
 
   say "building UniDrop $APP_VERSION (standard library only)"
   (cd "$SCRIPT_DIR" && CGO_ENABLED=0 GOOS="$TARGET_OS" GOARCH="$TARGET_ARCH" "$GO_CMD" build \
-    -trimpath -ldflags="-s -w -X main.appVersion=$APP_VERSION" -o "$output" .)
+    -mod=vendor -trimpath -ldflags="-s -w -X main.appVersion=$APP_VERSION" -o "$output" .)
+  chmod 755 "$output"
+}
+
+build_linux_tray() {
+  output=$1
+  [ -f "$SCRIPT_DIR/cmd/unidrop-tray/main.go" ] || fail "Linux tray source is missing"
+  [ -d "$SCRIPT_DIR/vendor/github.com/godbus/dbus/v5" ] || fail "vendored Linux D-Bus source is missing"
+  prepare_go
+  say "building the native Linux AppIndicator tray"
+  (cd "$SCRIPT_DIR" && CGO_ENABLED=0 GOOS=linux GOARCH="$TARGET_ARCH" "$GO_CMD" build \
+    -mod=vendor -trimpath -ldflags="-s -w -X main.appVersion=$APP_VERSION" -o "$output" ./cmd/unidrop-tray)
   chmod 755 "$output"
 }
 
@@ -224,11 +263,15 @@ PLIST
 install_linux() {
   binary_dir="$INSTALL_HOME/.local/bin"
   binary="$binary_dir/unidrop"
+  tray_binary="$binary_dir/unidrop-tray"
   apps_dir="${XDG_DATA_HOME:-$INSTALL_HOME/.local/share}/applications"
+  icons_dir="${XDG_DATA_HOME:-$INSTALL_HOME/.local/share}/icons/hicolor/scalable/apps"
   autostart_dir="${XDG_CONFIG_HOME:-$INSTALL_HOME/.config}/autostart"
-  mkdir -p "$binary_dir" "$apps_dir" "$autostart_dir"
+  mkdir -p "$binary_dir" "$apps_dir" "$icons_dir" "$autostart_dir"
   build_binary "$binary"
+  build_linux_tray "$tray_binary"
   ensure_cli_path "$binary_dir"
+  cp "$SCRIPT_DIR/linux/unidrop.svg" "$icons_dir/unidrop.svg"
 
   cat > "$apps_dir/unidrop.desktop" <<DESKTOP
 [Desktop Entry]
@@ -236,7 +279,7 @@ Type=Application
 Name=UniDrop
 Comment=Secure local file sharing
 Exec=$binary --open
-Icon=folder-publicshare
+Icon=unidrop
 Terminal=false
 Categories=Network;FileTransfer;
 DESKTOP
@@ -257,9 +300,25 @@ RestartSec=3
 [Install]
 WantedBy=default.target
 UNIT
+    cat > "$unit_dir/unidrop-tray.service" <<UNIT
+[Unit]
+Description=UniDrop Linux tray indicator
+After=unidrop.service graphical-session.target
+Requires=unidrop.service
+
+[Service]
+ExecStart=$tray_binary
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
+UNIT
     if [ "$NO_START" != "1" ]; then
       systemctl --user daemon-reload
-      systemctl --user enable --now unidrop.service
+      systemctl --user enable unidrop.service unidrop-tray.service
+      systemctl --user restart unidrop.service
+      systemctl --user restart unidrop-tray.service
     fi
   else
     cat > "$autostart_dir/unidrop.desktop" <<DESKTOP
@@ -270,15 +329,36 @@ Exec=$binary --no-open
 Terminal=false
 X-GNOME-Autostart-enabled=true
 DESKTOP
+    cat > "$autostart_dir/unidrop-tray.desktop" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=UniDrop tray indicator
+Exec=$tray_binary
+Terminal=false
+X-GNOME-Autostart-enabled=true
+DESKTOP
     if [ "$NO_START" != "1" ]; then
+      "$binary" stop >/dev/null 2>&1 || {
+        command -v pkill >/dev/null 2>&1 && pkill -TERM -x unidrop >/dev/null 2>&1 || :
+      }
+      command -v pkill >/dev/null 2>&1 && pkill -TERM -x unidrop-tray >/dev/null 2>&1 || :
+      if command -v pgrep >/dev/null 2>&1; then
+        wait_count=0
+        while pgrep -x unidrop >/dev/null 2>&1 && [ "$wait_count" -lt 5 ]; do
+          sleep 1
+          wait_count=$((wait_count + 1))
+        done
+      fi
       "$binary" --no-open >/dev/null 2>&1 &
+      "$tray_binary" >/dev/null 2>&1 &
     fi
   fi
   say "installed $binary"
   if [ "$NO_START" = "1" ]; then
     say "startup files installed; automatic start was skipped"
   else
-    say "UniDrop is running. Open it from your application menu or visit http://127.0.0.1:43337"
+    say "UniDrop's Linux tray indicator is running. Click its icon or open UniDrop from the application menu."
+    say "If your desktop hides StatusNotifier/AppIndicator icons, the application-menu browser panel remains available."
   fi
 }
 

@@ -3,8 +3,9 @@
 param([switch]$NoStart)
 $ErrorActionPreference = 'Stop'
 
-$AppVersion = '0.3.0'
+$AppVersion = '0.3.1'
 $GoVersion = '1.26.5'
+$MinimumGoVersion = [version]'1.25.0'
 $ScriptDirectory = $PSScriptRoot
 $TempDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("unidrop-install-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $TempDirectory | Out-Null
@@ -41,6 +42,19 @@ try {
         Copy-Item -Force $Bundled $Destination
     } else {
         $GoCommand = Get-Command go -ErrorAction SilentlyContinue
+        if ($GoCommand) {
+            try {
+                $InstalledGoVersionText = (& $GoCommand.Source env GOVERSION).Trim()
+                if ($InstalledGoVersionText.StartsWith('go')) { $InstalledGoVersionText = $InstalledGoVersionText.Substring(2) }
+                $InstalledGoVersion = [version]$InstalledGoVersionText
+                if ($InstalledGoVersion -lt $MinimumGoVersion) {
+                    Write-UniDrop "the installed Go compiler is older than $MinimumGoVersion; using the verified current toolchain"
+                    $GoCommand = $null
+                }
+            } catch {
+                $GoCommand = $null
+            }
+        }
         if (-not $GoCommand) {
             $ArchiveName = "go$GoVersion.windows-$TargetArch.zip"
             $ArchivePath = Join-Path $TempDirectory $ArchiveName
@@ -58,6 +72,9 @@ try {
         if (-not (Test-Path (Join-Path $ScriptDirectory 'go.mod')) -or -not (Test-Path (Join-Path $ScriptDirectory 'main.go'))) {
             throw 'Source files or a bundled binary are required'
         }
+        if (-not (Test-Path (Join-Path $ScriptDirectory 'vendor'))) {
+            throw 'Vendored module source is required for an offline build'
+        }
         Write-UniDrop "building UniDrop $AppVersion (standard library only)"
         $OldCgo = $env:CGO_ENABLED
         $OldGoos = $env:GOOS
@@ -66,7 +83,7 @@ try {
             $env:CGO_ENABLED = '0'; $env:GOOS = 'windows'; $env:GOARCH = $TargetArch
             Push-Location $ScriptDirectory
             try {
-                & $GoExecutable build -trimpath "-ldflags=-s -w -X main.appVersion=$AppVersion" -o $Destination .
+                & $GoExecutable build -mod=vendor -trimpath "-ldflags=-s -w -X main.appVersion=$AppVersion" -o $Destination .
                 if ($LASTEXITCODE -ne 0) { throw 'Go build failed' }
             } finally { Pop-Location }
         } finally {

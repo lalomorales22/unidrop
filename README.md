@@ -2,13 +2,16 @@
 
 UniDrop is a working cross-platform local file sender for macOS, Linux, and Windows. It discovers nearby computers, pairs them with a one-time key, and streams files directly over a TLS 1.3 connection. There is no cloud upload and no account.
 
-The secure engine and responsive interface are intentionally contained in [`main.go`](main.go). macOS adds a tiny native AppKit/WebKit menu-bar shell from [`macos/UniDropMenu.swift`](macos/UniDropMenu.swift). UniDrop uses no third-party runtime, npm tree, Electron bundle, database, or third-party Go module.
+The secure engine and responsive interface are intentionally contained in [`main.go`](main.go). macOS adds a tiny AppKit/WebKit menu-bar shell, and Linux adds a tiny pure-Go StatusNotifier/AppIndicator shell. UniDrop uses no third-party runtime, npm tree, Electron bundle, database, or system package installed with sudo.
 
-## What works in v0.3
+## What works in v0.3.1
 
-- macOS, Linux, and Windows binaries from one source file
+- macOS, Linux, and Windows secure core binaries from one source file
 - automatic peer discovery on the same LAN using local multicast
 - native macOS menu-bar icon that stays running and opens a compact popover
+- native Linux AppIndicator/StatusNotifier tray icon with a live status menu
+- nearby, pending-approval, reconnecting, and attention states in the Linux tray
+- Linux tray controls for opening UniDrop, receive mode, received files, and Quit
 - Bonjour-assisted Mac-to-Mac discovery plus resilient multicast retry
 - nearby-device and pending-approval count in the menu bar
 - compact nearly-black UI designed for the menu-bar popover
@@ -50,15 +53,15 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\install.ps1
 ```
 
-If Go is already installed, the installer uses it. Otherwise it downloads the official Go 1.26.5 toolchain from `go.dev` into a temporary directory, verifies its pinned SHA-256 checksum, builds UniDrop, then deletes that temporary toolchain. The installed application itself has no runtime dependencies.
+If a compatible Go release is already installed, the installer uses it. Otherwise it downloads the official Go 1.26.5 toolchain from `go.dev` into a temporary directory, verifies its pinned SHA-256 checksum, builds UniDrop, then deletes that temporary toolchain. The installed application itself has no runtime dependencies. Linux tray source dependencies are reviewed, pinned, and checked into `vendor/`, so installation never fetches a third-party module.
 
 Go 1.26.5 is intentionally pinned because it is the current July 2026 security release and includes the latest fixes in `crypto/tls` and `os`. See the [Go release history](https://go.dev/doc/devel/release) and [Go vulnerability database](https://pkg.go.dev/vuln/).
 
-The macOS installer includes a SHA-256-pinned universal menu-bar binary built from the checked-in Swift source, so Xcode is not required. If that binary is intentionally omitted, the installer can rebuild it with Apple’s Swift compiler. No third-party package is downloaded.
+The macOS installer includes a SHA-256-pinned universal menu-bar binary built from the checked-in Swift source, so Xcode is not required. If that binary is intentionally omitted, the installer can rebuild it with Apple’s Swift compiler. Linux builds its small tray companion from vendored source. No third-party package is downloaded during installation.
 
 ## Use
 
-1. Open UniDrop on both computers. On macOS, click the ⇅ icon in the menu bar; the full panel remains available at [http://127.0.0.1:43337](http://127.0.0.1:43337).
+1. Open UniDrop on both computers. On macOS, click the ⇅ menu-bar icon. On Linux, click the UniDrop tray icon. The full panel remains available at [http://127.0.0.1:43337](http://127.0.0.1:43337).
 2. UniDrop searches automatically. Choose the nearby device that appears.
 3. Copy the one-time pairing key shown by the receiver, paste it on the sender, and press **Pair**.
 4. Drop one or more files and press **Send**.
@@ -75,6 +78,12 @@ List nearby devices and their command names:
 
 ```sh
 unidrop peers
+```
+
+Stop the current user's background service cleanly:
+
+```sh
+unidrop stop
 ```
 
 Send a file using the nearby computer's UniDrop name:
@@ -102,16 +111,25 @@ Incoming behavior is controlled from the receiver panel:
 | Platform | Startup and app access | Received files | Current native shell integration |
 |---|---|---|---|
 | macOS | `~/Applications/UniDrop.app` plus a LaunchAgent | `~/Downloads/UniDrop` | Native menu-bar popover, Bonjour discovery, count badge, compact UI, notifications |
-| Linux | application-menu entry plus systemd user service or XDG autostart | `~/Downloads/UniDrop` | Browser control panel; `notify-send` when available |
+| Linux | application-menu entry plus systemd user services or XDG autostart | `~/Downloads/UniDrop` | Native StatusNotifier/AppIndicator tray, live menu, generated state icon, notifications, browser panel on click |
 | Windows | Start-menu and Startup shortcuts; command added to user PATH | `%USERPROFILE%\Downloads\UniDrop` | Browser control panel; private-network firewall prompt may appear |
 
-macOS now has the first native shell layer. Windows and Linux tray shells are next. They will reuse the same loopback summary, discovery, approval, and command APIs while adapting to Shell_NotifyIcon on Windows and StatusNotifier/AppIndicator where the Linux desktop supports it.
+The Linux tray speaks the [Freedesktop StatusNotifierItem protocol](https://specifications.freedesktop.org/status-notifier-item/latest-single/) directly over the user's D-Bus session. It appears on desktops with a StatusNotifier/AppIndicator host. On desktops without one, UniDrop keeps running securely and remains available from the application menu or browser URL. No legacy tray library is installed automatically.
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the OS breakdown and [SECURITY.md](SECURITY.md) for the threat model and remaining hardening work.
+If the Linux icon is missing, verify the companion and inspect its desktop-session log:
+
+```sh
+systemctl --user status unidrop-tray.service
+journalctl --user -u unidrop-tray.service -n 30 --no-pager
+```
+
+A healthy companion logs either `tray registered` or the explicit `no StatusNotifier host found` fallback message.
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the OS breakdown, [SECURITY.md](SECURITY.md) for the threat model, and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the two vendored Linux tray modules.
 
 ## Develop
 
-Go 1.22 or newer is required; use the current patched release for production builds.
+Go 1.25 or newer is required; use the current patched release for production builds.
 
 ```sh
 go test -race ./...
@@ -136,4 +154,4 @@ The release builder also writes `dist/SHA256SUMS`, which both installers verify 
 
 UniDrop is currently for devices on the same local IP network. It does not open router ports, use UPnP, or provide an internet relay.
 
-Protocol v2 is used by UniDrop v0.2 and v0.3. Upgrade both computers together; v0.1 peers are intentionally ignored because v0.1 did not negotiate receiver approval before sending bytes.
+Protocol v2 is used by UniDrop v0.2 through v0.3.1. Upgrade both computers together; v0.1 peers are intentionally ignored because v0.1 did not negotiate receiver approval before sending bytes.

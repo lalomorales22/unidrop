@@ -17,7 +17,7 @@ Bluetooth can later serve as a discovery or IP-bootstrap channel, but it should 
 
 ```mermaid
 flowchart LR
-    UIA["Compact native menu popover\nor browser UI"] --> DA["Sender UniDrop daemon"]
+    UIA["Native menu or tray shell\nor browser UI"] --> DA["Sender UniDrop daemon"]
     CLIA["unidrop send file\nminibrain.local"] -->|"loopback + private token"| DA
     DA -. "UDP multicast discovery" .-> DB["Receiver UniDrop daemon"]
     UIA -. "macOS Bonjour assist" .-> DB
@@ -78,9 +78,12 @@ The token in `control-token` prevents an unrelated web page from invoking filesy
 - Startup: systemd user service where available, otherwise XDG autostart
 - Application launcher: `~/.local/share/applications/unidrop.desktop`
 - Configuration: `${XDG_CONFIG_HOME:-~/.config}/UniDrop`
-- User actions: `xdg-open` opens the control panel and receive folder
+- Native shell: pure-Go StatusNotifierItem plus DBusMenu companion, without GTK/Qt/Electron
+- Dynamic states: nearby count, pending approvals, reconnecting, and attention icon
+- User actions: Open, receive-mode selection, received files, and authenticated Quit
+- Process model: separate user services keep the secure core independent from desktop tray availability
 - Receive notification: `notify-send` when installed
-- Future tray: StatusNotifierItem/AppIndicator adapter, with a browser fallback for desktops that removed tray support
+- Fallback: application-menu/browser control panel when the desktop has no StatusNotifier host
 
 ### Windows
 
@@ -105,7 +108,7 @@ Files are deliberately sent as raw request bodies rather than multipart forms. T
 
 ## Roadmap
 
-1. Native Windows and Linux tray adapters with **Open**, **Receive mode**, and **Quit**.
+1. Native Windows tray adapter with **Open**, **Receive mode**, and **Quit**.
 2. Finder, Explorer, Dolphin, Nautilus, and Thunar **Send with UniDrop** entry points backed by the command bridge.
 3. Signed/notarized installers and an update manifest with binary checksums.
 4. Optional QR pairing and a stronger PAKE-based short-code mode.

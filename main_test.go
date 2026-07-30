@@ -258,6 +258,36 @@ func TestReceiveRejectsUnpairedSender(t *testing.T) {
 	}
 }
 
+func TestAuthorizedTrayShutdown(t *testing.T) {
+	token := strings.Repeat("a", 64)
+	app := &App{controlToken: token, shutdown: make(chan struct{})}
+	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:43337/api/cli/shutdown", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	recorder := httptest.NewRecorder()
+	app.localMux().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("shutdown returned %d: %s", recorder.Code, recorder.Body.String())
+	}
+	select {
+	case <-app.shutdown:
+	default:
+		t.Fatal("authorized shutdown did not stop the app")
+	}
+
+	unauthorized := &App{controlToken: token, shutdown: make(chan struct{})}
+	request = httptest.NewRequest(http.MethodPost, "http://127.0.0.1:43337/api/cli/shutdown", nil)
+	recorder = httptest.NewRecorder()
+	unauthorized.localMux().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized shutdown returned %d", recorder.Code)
+	}
+	select {
+	case <-unauthorized.shutdown:
+		t.Fatal("unauthorized shutdown stopped the app")
+	default:
+	}
+}
+
 func testApp(t *testing.T, root, name string) *App {
 	t.Helper()
 	config := filepath.Join(root, "config")
