@@ -53,6 +53,10 @@ The exact module versions were queried against OSV on July 30, 2026, with no kno
 
 Installers pin the official Go 1.26.5 toolchain and the SHA-256 values published by `go.dev` for macOS, Linux, and Windows on AMD64 and ARM64. That release includes July 2026 security fixes in `crypto/tls` and `os`; older 1.26 releases fixed additional issues in `crypto/x509`, `net/http`, and related packages. Before updating the compiler or either Linux module, review the [official release history](https://go.dev/doc/devel/release), query the [Go vulnerability database](https://pkg.go.dev/vuln/), and rebuild `vendor/` from the reviewed module graph.
 
+The implemented controls and their negative or abuse-case tests are mapped in
+[`docs/SECURITY_TEST_MATRIX.md`](docs/SECURITY_TEST_MATRIX.md). This evidence does
+not replace the open independent protocol and cryptographic review.
+
 ## Reporting
 
 Do not post exploitable security details in a public issue. Submit a
