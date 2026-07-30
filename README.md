@@ -2,6 +2,9 @@
 
 **Private, secure, cross-platform file sharing for the computers around you.**
 
+[Install](#install) · [Send a file](#send-your-first-file) ·
+[Security](SECURITY.md) · [Roadmap](ROADMAP.md) · [Contributing](CONTRIBUTING.md)
+
 Xendfile is a universal local-network file sender for macOS, Linux, and Windows. It automatically discovers nearby Xendfile computers, pairs them with a one-time key, and streams files directly between them over TLS 1.3. There is no cloud upload, account, subscription, tracking service, or internet relay.
 
 The secure engine and responsive dark interface live in [`main.go`](main.go). Each operating system adds a small native shell: an AppKit/WebKit menu-bar app on macOS, a StatusNotifier/AppIndicator tray on Linux, and a Win32 notification-area companion on Windows. Xendfile does not use Electron, npm, a database, or an administrator-level background service.
@@ -13,7 +16,21 @@ The secure engine and responsive dark interface live in [`main.go`](main.go). Ea
 > and [security limitations](SECURITY.md) before relying on Xendfile for sensitive
 > or regulated work.
 
-## What's new in v0.3.3
+## Xendfile name and open-source status
+
+Xendfile is the current name of the project formerly published as the UniDrop
+alpha. The canonical repository is
+[`github.com/lalomorales22/xendfile`](https://github.com/lalomorales22/xendfile),
+and all new binaries, installers, application identities, documentation, and
+release metadata use Xendfile.
+
+The project is open-source under the [Apache License 2.0](LICENSE) and is
+provided **as is**, without warranty. Existing pre-rename alpha installations
+can upgrade without discarding their local identity or paired-device records.
+A few former-name protocol strings remain frozen strictly for compatibility
+with those installations; see [Upgrading from the former UniDrop alpha](#upgrading-from-the-former-unidrop-alpha).
+
+## What's included in v0.3.3
 
 The Windows experience is now a real background desktop app instead of only a browser-launched service:
 
@@ -130,7 +147,11 @@ If Go 1.25 or newer is already installed, Xendfile builds with it. Otherwise the
 
 The installed app has no runtime dependencies. Linux's two small D-Bus source dependencies are reviewed, pinned, and checked into `vendor/`, so installation does not fetch third-party modules. The Windows companion uses only Go's standard library and Win32 system APIs. See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) and [`SECURITY.md`](SECURITY.md).
 
-The macOS source checkout includes a SHA-256-pinned universal menu-bar binary, so Xcode is not normally required. If that portable shell is intentionally omitted, the installer can use a bundled release artifact or rebuild it with Apple's Swift compiler.
+The repository does not check in an opaque prebuilt macOS menu binary. A bundled
+release can provide the architecture-specific menu shell with its checksum;
+otherwise the source installer builds `macos/XendfileMenu.swift` reproducibly
+with Apple's Swift compiler. Run `xcode-select --install` if that compiler is
+not already available.
 
 ## Update an existing installation
 
